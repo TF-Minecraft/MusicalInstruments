@@ -1,3 +1,11 @@
+# Third-party notices
+
+## Original MusicalInstruments code
+
+The original code by Justinas Launikonis was supplied under the MIT License.
+Its copyright and permission notice is reproduced below. Rights already
+granted under MIT remain in effect for the material covered by that notice.
+
 MIT License
 
 Copyright (c) 2026 Justinas Launikonis
