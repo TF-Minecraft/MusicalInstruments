@@ -1,14 +1,14 @@
-package tfmc.justin;
+package net.tfminecraft.musicalinstruments;
 
 import org.bstats.bukkit.Metrics;
 import org.bstats.charts.AdvancedPie;
 import org.bstats.charts.SimplePie;
 import org.bstats.charts.SingleLineChart;
 import org.bukkit.plugin.java.JavaPlugin;
-import tfmc.justin.commands.InstrumentCommand;
-import tfmc.justin.items.ItemResolver;
-import tfmc.justin.listeners.InstrumentListener;
-import tfmc.justin.managers.InstrumentManager;
+import net.tfminecraft.musicalinstruments.commands.InstrumentCommand;
+import net.tfminecraft.musicalinstruments.items.ItemResolver;
+import net.tfminecraft.musicalinstruments.listeners.InstrumentListener;
+import net.tfminecraft.musicalinstruments.managers.InstrumentManager;
 
 import java.util.HashMap;
 import java.util.Map;

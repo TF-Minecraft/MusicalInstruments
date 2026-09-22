@@ -1,4 +1,4 @@
-package tfmc.justin.items;
+package net.tfminecraft.musicalinstruments.items;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Material;

@@ -72,7 +72,7 @@
                     <relocations>
                         <relocation>
                             <pattern>org.bstats</pattern>
-                            <shadedPattern>tfmc.justin.bstats</shadedPattern>
+                            <shadedPattern>net.tfminecraft.musicalinstruments.bstats</shadedPattern>
                         </relocation>
                     </relocations>
                 </configuration>
