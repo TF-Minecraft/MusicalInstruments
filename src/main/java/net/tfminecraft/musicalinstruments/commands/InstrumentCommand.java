@@ -1,4 +1,4 @@
-package tfmc.justin.commands;
+package net.tfminecraft.musicalinstruments.commands;
 
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -6,8 +6,8 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import tfmc.justin.InstrumentPlugin;
-import tfmc.justin.managers.InstrumentManager;
+import net.tfminecraft.musicalinstruments.InstrumentPlugin;
+import net.tfminecraft.musicalinstruments.managers.InstrumentManager;
 
 import java.util.ArrayList;
 import java.util.Collections;

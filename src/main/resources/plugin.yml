@@ -1,4 +1,4 @@
-main: tfmc.justin.InstrumentPlugin
+main: net.tfminecraft.musicalinstruments.InstrumentPlugin
 version: ${project.version}
 name: MusicalInstruments
 author: Justin

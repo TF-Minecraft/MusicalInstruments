@@ -6,7 +6,7 @@
 
     <groupId>tfmc.justin</groupId>
     <artifactId>musicalinstruments</artifactId>
-    <version>2.5</version>
+    <version>3.0.0</version>
 
     <name>MusicalInstruments</name>
     <url>tfminecraft.net</url>
@@ -72,7 +72,7 @@
                     <relocations>
                         <relocation>
                             <pattern>org.bstats</pattern>
-                            <shadedPattern>tfmc.justin.bstats</shadedPattern>
+                            <shadedPattern>net.tfminecraft.musicalinstruments.bstats</shadedPattern>
                         </relocation>
                     </relocations>
                 </configuration>

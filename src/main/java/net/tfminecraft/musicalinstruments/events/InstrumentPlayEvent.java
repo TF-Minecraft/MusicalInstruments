@@ -1,4 +1,4 @@
-package tfmc.justin.events;
+package net.tfminecraft.musicalinstruments.events;
 
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;

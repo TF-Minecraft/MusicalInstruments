@@ -1,8 +1,8 @@
-package tfmc.justin.managers;
+package net.tfminecraft.musicalinstruments.managers;
 
 import org.bukkit.inventory.ItemStack;
-import tfmc.justin.InstrumentPlugin;
-import tfmc.justin.items.ItemResolver;
+import net.tfminecraft.musicalinstruments.InstrumentPlugin;
+import net.tfminecraft.musicalinstruments.items.ItemResolver;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;

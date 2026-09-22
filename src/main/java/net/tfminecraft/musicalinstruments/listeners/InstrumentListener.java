@@ -1,4 +1,4 @@
-package tfmc.justin.listeners;
+package net.tfminecraft.musicalinstruments.listeners;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Particle;
@@ -9,9 +9,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.scheduler.BukkitRunnable;
-import tfmc.justin.InstrumentPlugin;
-import tfmc.justin.events.InstrumentPlayEvent;
-import tfmc.justin.managers.InstrumentManager;
+import net.tfminecraft.musicalinstruments.InstrumentPlugin;
+import net.tfminecraft.musicalinstruments.events.InstrumentPlayEvent;
+import net.tfminecraft.musicalinstruments.managers.InstrumentManager;
 
 import java.util.HashMap;
 import java.util.Map;
