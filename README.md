@@ -22,13 +22,11 @@ MusicalInstruments is distributed under the [Artistic License 2.0](LICENSE).
 Copyright (c) 2026 Justinas Launikonis.
 Copyright (c) 2026 TF-Minecraft contributors.
 
-## Credits and third-party notices
+Third-party dependencies retain their own licenses.
+
+## Credits
 
 Created by [Justinas Launikonis](https://github.com/JustinasLa).
-
-The original author's MIT copyright and permission notice is retained in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Third-party dependencies retain
-their own licenses.
 
 ## Documentation
 
