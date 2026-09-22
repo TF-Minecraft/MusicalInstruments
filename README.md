@@ -17,7 +17,16 @@ Sounds play at the performer's location for nearby listeners, while floating not
 
 ## Credits and license
 
-Created by [Justinas Launikonis](https://github.com/JustinasLa). Distributed under the [MIT License](LICENSE).
+Created by [Justinas Launikonis](https://github.com/JustinasLa).
+
+Copyright (c) 2026 Justinas Launikonis.
+Copyright (c) 2026 TF-Minecraft contributors.
+
+This project is distributed under the [Artistic License 2.0](LICENSE).
+The existing MIT copyright and permission notice is preserved in
+[LICENSE-MIT](LICENSE-MIT); the rights already granted under MIT remain in effect
+for the material covered by that notice. Third-party dependencies retain their
+own licenses.
 
 ## Documentation
 
