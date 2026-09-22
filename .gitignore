@@ -7,11 +7,16 @@ nbbuild/
 nbdist/
 *.class
 dependency-reduced-pom.xml
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
 
 # Build dependencies
 /.build/
-/*.jar
-/libs/*.jar
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
 
 # Python caches and environments
 __pycache__/
