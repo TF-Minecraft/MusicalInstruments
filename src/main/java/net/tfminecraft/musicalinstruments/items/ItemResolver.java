@@ -1,5 +1,7 @@
 package net.tfminecraft.musicalinstruments.items;
 
+import net.tfminecraft.musicalinstruments.util.LegacyModelData;
+
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
@@ -84,6 +86,8 @@ public class ItemResolver {
     }
 
     // modeled(type=paper;name=&6Flute;model=1001)
+    // Keep the existing legacy text representation, formatting, and exact-string comparisons.
+    @SuppressWarnings("deprecation")
     private ItemStack resolveModeled(String path) {
         int open = path.indexOf('(');
         int close = path.lastIndexOf(')');
@@ -114,7 +118,7 @@ public class ItemResolver {
             }
             if (attributes.containsKey("model")) {
                 try {
-                    meta.setCustomModelData(Integer.parseInt(attributes.get("model")));
+                    LegacyModelData.set(meta, Integer.parseInt(attributes.get("model")));
                 } catch (NumberFormatException e) {
                     logger.warning("Invalid model data in modeled item '" + path + "'.");
                 }
