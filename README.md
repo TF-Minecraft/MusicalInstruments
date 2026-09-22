@@ -15,9 +15,18 @@ Sounds play at the performer's location for nearby listeners, while floating not
 - **Custom instrument items** — supports vanilla items and instrument items from MMOItems, ItemsAdder, and Nexo.
 - **In-game note reference** — players can view the keybind layout for the instrument they are holding.
 
-## Credits and license
+## License
 
-Created by [Justinas Launikonis](https://github.com/JustinasLa). Distributed under the [MIT License](LICENSE).
+MusicalInstruments is distributed under the [Artistic License 2.0](LICENSE).
+
+Copyright (c) 2026 Justinas Launikonis.
+Copyright (c) 2026 TF-Minecraft contributors.
+
+Third-party dependencies retain their own licenses.
+
+## Credits
+
+Created by [Justinas Launikonis](https://github.com/JustinasLa).
 
 ## Documentation
 
