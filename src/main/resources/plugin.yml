@@ -1,5 +1,5 @@
 main: tfmc.justin.InstrumentPlugin
-version: 2.4
+version: ${project.version}
 name: MusicalInstruments
 author: Justin
 api-version: 1.21
