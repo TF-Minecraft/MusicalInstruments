@@ -10,6 +10,7 @@ import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.scheduler.BukkitRunnable;
 import tfmc.justin.InstrumentPlugin;
+import tfmc.justin.events.InstrumentPlayEvent;
 import tfmc.justin.managers.InstrumentManager;
 
 import java.util.HashMap;
@@ -72,6 +73,7 @@ public class InstrumentListener implements Listener {
         );
         
         plugin.recordInstrumentPlay(instrument);
+        Bukkit.getPluginManager().callEvent(new InstrumentPlayEvent(player, instrument, soundKey));
 
         // Spawn particle effect
         player.getWorld().spawnParticle(
