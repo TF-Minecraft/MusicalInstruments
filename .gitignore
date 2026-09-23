@@ -52,3 +52,6 @@ Desktop.ini
 
 # Local investigation notes and test artifacts
 /.scratch/
+
+# Technical documentation is maintained in TF-Minecraft/Docs
+/docs/
