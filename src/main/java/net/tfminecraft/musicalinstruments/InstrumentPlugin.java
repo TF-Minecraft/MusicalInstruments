@@ -22,25 +22,21 @@ public class InstrumentPlugin extends JavaPlugin {
 
     private static final int BSTATS_PLUGIN_ID = 33322;
 
-    private static InstrumentPlugin instance;
-    private ItemResolver itemResolver;
     private InstrumentManager manager;
 
     // Play counts since the last bStats submission.
-    // Written from the main thread (listener), read and reset from the bStats submit thread every 30 minutes.
+    // Written by the listener and drained when bStats collects chart data every 30 minutes.
+    // bStats collects on the main thread, but its Folia path collects on its own thread, so keep these atomic.
     private final Map<String, AtomicInteger> playCounts = new ConcurrentHashMap<>();
     private final AtomicInteger totalPlays = new AtomicInteger();
 
     @Override
     public void onEnable() {
-        instance = this;
         getLogger().info("MusicalInstruments is enabled!");
 
         saveDefaultConfig();
 
-        itemResolver = new ItemResolver(getLogger());
-
-        manager = new InstrumentManager(this, itemResolver);
+        manager = new InstrumentManager(this, new ItemResolver(getLogger()));
 
         // Resolve instrument templates on the first tick, after every plugin
         // (MMOItems, ItemsAdder, Nexo) has finished enabling and registered its items.
@@ -87,13 +83,4 @@ public class InstrumentPlugin extends JavaPlugin {
         playCounts.computeIfAbsent(instrument, k -> new AtomicInteger()).incrementAndGet();
         totalPlays.incrementAndGet();
     }
-
-    @Override
-    public void onDisable() {
-        getLogger().info("MusicalInstruments is disabled!");
-    }
-
-    public static InstrumentPlugin getInstance() { return instance; }
-    public ItemResolver getItemResolver() { return itemResolver; }
-    public InstrumentManager getManager() { return manager; }
 }

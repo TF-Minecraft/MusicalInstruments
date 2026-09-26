@@ -51,6 +51,11 @@ public class InstrumentManager {
                     plugin.getLogger().warning("Could not resolve item '" + configPath + "' for instrument '" + instrument + "'.");
                     continue;
                 }
+                // Air in the off-hand never counts as an instrument, so it could not be played.
+                if (template.getType().isAir()) {
+                    plugin.getLogger().warning("Item '" + configPath + "' for instrument '" + instrument + "' is air.");
+                    continue;
+                }
 
                 ItemStack cosmeticFree = withoutCosmetics(template);
                 templates.put(instrument, template);
@@ -92,14 +97,13 @@ public class InstrumentManager {
         return match;
     }
 
+    // Only called with non-air items, which always have item meta.
     private static ItemStack withoutCosmetics(ItemStack item) {
         ItemStack copy = item.clone();
         ItemMeta meta = copy.getItemMeta();
-        if (meta != null) {
-            meta.displayName(null);
-            meta.lore(null);
-            copy.setItemMeta(meta);
-        }
+        meta.displayName(null);
+        meta.lore(null);
+        copy.setItemMeta(meta);
         return copy;
     }
 
@@ -115,6 +119,19 @@ public class InstrumentManager {
     public double getVolume(String instrument) { return plugin.getConfig().getDouble(instrument + ".hotbar-sounds.volume", 1.0);}
     public double getPitch(String instrument){ return plugin.getConfig().getDouble(instrument + ".hotbar-sounds.pitch", 1.0); }
     public Set<String> getAllInstruments() { return Collections.unmodifiableSet(templates.keySet()); }
+
+    // Finds a loaded instrument by name, preferring an exact match over a case-insensitive one.
+    public String findInstrument(String name) {
+        if (templates.containsKey(name)) {
+            return name;
+        }
+        for (String instrument : templates.keySet()) {
+            if (instrument.equalsIgnoreCase(name)) {
+                return instrument;
+            }
+        }
+        return null;
+    }
 
     // Gets a copy of an instrument's cached item template.
     public ItemStack getInstrumentItem(String instrument) {

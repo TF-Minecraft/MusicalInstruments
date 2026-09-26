@@ -7,15 +7,9 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerItemHeldEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.scheduler.BukkitRunnable;
 import net.tfminecraft.musicalinstruments.InstrumentPlugin;
 import net.tfminecraft.musicalinstruments.events.InstrumentPlayEvent;
 import net.tfminecraft.musicalinstruments.managers.InstrumentManager;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
 
 // ====================================
 // Handles instrument-related events.
@@ -25,20 +19,13 @@ public class InstrumentListener implements Listener {
     
     private final InstrumentPlugin plugin;
     private final InstrumentManager manager;
-    private final Map<UUID, Integer> instrumentTasks;
 
     public InstrumentListener(InstrumentPlugin plugin, InstrumentManager manager) {
         this.plugin = plugin;
         this.manager = manager;
-        this.instrumentTasks = new HashMap<>();
     }
 
-    @EventHandler
-    public void onPlayerQuit(PlayerQuitEvent event) {
-        stopInstrumentDisplay(event.getPlayer());
-    }
-    
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
     public void onPlayerHotbarChange(PlayerItemHeldEvent event) {
         Player player = event.getPlayer();
         String instrument = manager.getInstrument(player.getInventory().getItemInOffHand());
@@ -46,8 +33,6 @@ public class InstrumentListener implements Listener {
         if (instrument == null) {
             return;
         }
-        
-        startInstrumentDisplay(player, instrument);
         
         // Get hotbar slot (1-9)
         int newSlot = event.getNewSlot() + 1;
@@ -86,44 +71,10 @@ public class InstrumentListener implements Listener {
             1.0
         );
         
-        // Switch back to 9th hotbar slot after playing (so we can use the same note multiple times)
+        // Switch back to 9th hotbar slot after playing (so we can use the same note multiple times).
+        // The event must be cancelled too: otherwise the server applies the pressed slot after this
+        // handler, while the client stays on slot 9, and Paper then ignores the next press of that key.
         player.getInventory().setHeldItemSlot(8);
-    }
-    
-    // ====================================
-    // Check which instrument is being held by the player.
-    // ====================================
-    private void startInstrumentDisplay(Player player, String instrument) {
-        if (instrumentTasks.containsKey(player.getUniqueId())) {
-            return;
-        }
-
-        BukkitRunnable task = new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (!player.isOnline()) {
-                    stopInstrumentDisplay(player);
-                    return;
-                }
-                String currentInstrument = manager.getInstrument(player.getInventory().getItemInOffHand());
-                if (!instrument.equals(currentInstrument)) {
-                    stopInstrumentDisplay(player);
-                }
-            }
-        };
-
-        int taskId = task.runTaskTimer(plugin, 0L, 20L).getTaskId();
-        instrumentTasks.put(player.getUniqueId(), taskId);
-    }
-    
-    // ====================================
-    // Stops monitoring if the player is holding an instrument.
-    // ====================================
-    private void stopInstrumentDisplay(Player player)
-    {
-        Integer taskId = instrumentTasks.remove(player.getUniqueId());
-        if (taskId != null) {
-            Bukkit.getScheduler().cancelTask(taskId);
-        }
+        event.setCancelled(true);
     }
 }
