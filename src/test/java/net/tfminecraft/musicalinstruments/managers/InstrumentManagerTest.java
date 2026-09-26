@@ -26,6 +26,7 @@ class InstrumentManagerTest {
     private final YamlConfiguration config = new YamlConfiguration();
     private InstrumentManager manager;
     private ItemResolver resolver;
+    private Logger logger;
     private ItemStack lute;
 
     @BeforeEach
@@ -33,7 +34,8 @@ class InstrumentManagerTest {
         MockBukkit.mock();
         InstrumentPlugin plugin = mock(InstrumentPlugin.class);
         when(plugin.getConfig()).thenReturn(config);
-        when(plugin.getLogger()).thenReturn(Logger.getLogger("InstrumentManagerTest"));
+        logger = mock(Logger.class);
+        when(plugin.getLogger()).thenReturn(logger);
         resolver = mock(ItemResolver.class);
         manager = new InstrumentManager(plugin, resolver);
         lute = new ItemStack(Material.PAPER);
@@ -125,5 +127,68 @@ class InstrumentManagerTest {
         assertNull(manager.getInstrument(lute));
         assertEquals("flute", manager.getInstrument(new ItemStack(Material.STICK)));
         assertNull(manager.getInstrumentItem("lute"));
+    }
+
+    @Test
+    void skipsInstrumentsThatCannotBeLoaded() {
+        config.set("drum.keybind-message", "no item");
+        config.set("harp.item", "m.instruments.harp");
+        config.set("horn.item", "nx.horn");
+        when(resolver.resolve("nx.horn")).thenThrow(new IllegalStateException("registry reloading"));
+        config.set("rest.item", "v.air");
+        when(resolver.resolve("v.air")).thenReturn(new ItemStack(Material.AIR));
+        manager.loadTemplates();
+        assertEquals(List.of("lute"), List.copyOf(manager.getAllInstruments()));
+        verify(logger).warning("Instrument 'drum' has no 'item' defined in config.");
+        verify(logger).warning("Could not resolve item 'm.instruments.harp' for instrument 'harp'.");
+        verify(logger).warning("Failed to load instrument 'horn': registry reloading");
+        verify(logger).warning("Item 'v.air' for instrument 'rest' is air.");
+        assertThrows(UnsupportedOperationException.class, () -> manager.getAllInstruments().clear());
+    }
+
+    @Test
+    void warnsAboutNotesOnTheResetSlot() {
+        config.set("lute.hotbar-sounds.8", "instruments.lute_8c_single");
+        config.set("flute.item", "v.STICK");
+        config.set("flute.hotbar-sounds.9", "instruments.flute_9c_single");
+        config.set("flute.hotbar-sounds.9+sneak", "instruments.flute_18c_single");
+        when(resolver.resolve("v.STICK")).thenReturn(new ItemStack(Material.STICK));
+        manager.loadTemplates();
+        verify(logger).warning(contains("'flute' maps hotbar-sounds.9,"));
+        verify(logger).warning(contains("'flute' maps hotbar-sounds.9+sneak,"));
+        verify(logger, never()).warning(contains("'lute' maps"));
+        assertEquals(List.of("lute", "flute"), List.copyOf(manager.getAllInstruments()));
+    }
+
+    @Test
+    void findsInstrumentsIgnoringCase() {
+        config.set("Lyre.item", "v.STICK");
+        config.set("LUTE.item", "v.STICK");
+        when(resolver.resolve("v.STICK")).thenReturn(new ItemStack(Material.STICK));
+        manager.loadTemplates();
+        assertEquals("Lyre", manager.findInstrument("lyre"));
+        assertEquals("Lyre", manager.findInstrument("LYRE"));
+        // An exact match beats an earlier case-insensitive one.
+        assertEquals("LUTE", manager.findInstrument("LUTE"));
+        assertEquals("lute", manager.findInstrument("Lute"));
+        assertNull(manager.findInstrument("harp"));
+    }
+
+    @Test
+    void readsNoteSettingsFromConfig() {
+        config.set("lute.keybind-message", "1-[C]");
+        config.set("lute.hotbar-sounds.1", "instruments.lute_1c_single");
+        config.set("lute.hotbar-sounds.1+sneak", "instruments.lute_1c_chord");
+        config.set("lute.hotbar-sounds.volume", 4.0);
+        config.set("lute.hotbar-sounds.pitch", 0.5);
+        assertEquals("1-[C]", manager.getKeybindMessage("lute"));
+        assertEquals("instruments.lute_1c_single", manager.getSoundKey("lute", 1, false));
+        assertEquals("instruments.lute_1c_chord", manager.getSoundKey("lute", 1, true));
+        assertNull(manager.getSoundKey("lute", 2, false));
+        assertEquals(4.0, manager.getVolume("lute"));
+        assertEquals(0.5, manager.getPitch("lute"));
+        assertEquals(1.0, manager.getVolume("flute"));
+        assertEquals(1.0, manager.getPitch("flute"));
+        assertNull(manager.getKeybindMessage("flute"));
     }
 }

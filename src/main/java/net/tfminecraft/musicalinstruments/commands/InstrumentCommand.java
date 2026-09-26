@@ -140,15 +140,18 @@ public class InstrumentCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        String instrument = args[1].toLowerCase();
-        ItemStack item = manager.getInstrumentItem(instrument);
+        // Config keys keep their case, and tab completion suggests them as written.
+        String instrument = manager.findInstrument(args[1]);
 
-        if (item == null) {
-            player.sendMessage("§cUnknown instrument: §e" + instrument);
+        if (instrument == null) {
+            player.sendMessage("§cUnknown instrument: §e" + args[1]);
             return;
         }
 
-        player.getInventory().addItem(item);
+        // Drop whatever does not fit, like vanilla /give.
+        for (ItemStack leftover : player.getInventory().addItem(manager.getInstrumentItem(instrument)).values()) {
+            player.getWorld().dropItemNaturally(player.getLocation(), leftover);
+        }
         player.sendMessage("§aYou received: §e" + instrument);
     }
 

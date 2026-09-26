@@ -10,6 +10,7 @@ import org.bukkit.plugin.Plugin;
 
 import java.lang.reflect.Method;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.logging.Logger;
 
@@ -76,7 +77,8 @@ public class ItemResolver {
             return null;
         }
 
-        Material material = Material.matchMaterial(parts[1].toUpperCase());
+        // matchMaterial only strips a lower-case "minecraft:" prefix.
+        Material material = Material.matchMaterial(parts[1].toLowerCase(Locale.ROOT));
         if (material == null) {
             logger.warning("Unknown material '" + parts[1] + "' in item path '" + path + "'.");
             return null;
@@ -89,9 +91,10 @@ public class ItemResolver {
     // Keep the existing legacy text representation, formatting, and exact-string comparisons.
     @SuppressWarnings("deprecation")
     private ItemStack resolveModeled(String path) {
+        // resolve() only routes paths starting with "modeled(", so the bracket is present.
         int open = path.indexOf('(');
         int close = path.lastIndexOf(')');
-        if (open < 0 || close < open) {
+        if (close < open) {
             logger.warning("Malformed modeled item path '" + path + "'. Expected modeled(type=..;name=..;model=..).");
             return null;
         }
@@ -104,7 +107,7 @@ public class ItemResolver {
             }
         }
 
-        Material material = Material.matchMaterial(attributes.getOrDefault("type", "DIRT").toUpperCase());
+        Material material = Material.matchMaterial(attributes.getOrDefault("type", "dirt").toLowerCase(Locale.ROOT));
         if (material == null) {
             logger.warning("Invalid material type in modeled item '" + path + "'.");
             return null;
