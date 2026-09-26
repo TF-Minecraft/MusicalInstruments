@@ -147,6 +147,20 @@ class InstrumentManagerTest {
     }
 
     @Test
+    void warnsAboutNotesOnTheResetSlot() {
+        config.set("lute.hotbar-sounds.8", "instruments.lute_8c_single");
+        config.set("flute.item", "v.STICK");
+        config.set("flute.hotbar-sounds.9", "instruments.flute_9c_single");
+        config.set("flute.hotbar-sounds.9+sneak", "instruments.flute_18c_single");
+        when(resolver.resolve("v.STICK")).thenReturn(new ItemStack(Material.STICK));
+        manager.loadTemplates();
+        verify(logger).warning(contains("'flute' maps hotbar-sounds.9,"));
+        verify(logger).warning(contains("'flute' maps hotbar-sounds.9+sneak,"));
+        verify(logger, never()).warning(contains("'lute' maps"));
+        assertEquals(List.of("lute", "flute"), List.copyOf(manager.getAllInstruments()));
+    }
+
+    @Test
     void findsInstrumentsIgnoringCase() {
         config.set("Lyre.item", "v.STICK");
         config.set("LUTE.item", "v.STICK");

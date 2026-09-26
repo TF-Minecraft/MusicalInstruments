@@ -60,6 +60,7 @@ public class InstrumentManager {
                 ItemStack cosmeticFree = withoutCosmetics(template);
                 templates.put(instrument, template);
                 cosmeticFreeTemplates.put(instrument, cosmeticFree);
+                warnAboutResetSlot(instrument);
             } catch (Exception e) {
                 plugin.getLogger().warning("Failed to load instrument '" + instrument + "': " + e.getMessage());
             }
@@ -95,6 +96,16 @@ public class InstrumentManager {
             }
         }
         return match;
+    }
+
+    // Playing a note returns the player to slot 9, so notes mapped there cannot be played.
+    private void warnAboutResetSlot(String instrument) {
+        for (String key : new String[] {"9", "9+sneak"}) {
+            if (plugin.getConfig().contains(instrument + ".hotbar-sounds." + key)) {
+                plugin.getLogger().warning("Instrument '" + instrument + "' maps hotbar-sounds." + key
+                        + ", but slot 9 is where the hotbar resets after each note, so it is ignored.");
+            }
+        }
     }
 
     // Only called with non-air items, which always have item meta.

@@ -17,6 +17,9 @@ import net.tfminecraft.musicalinstruments.managers.InstrumentManager;
 // ====================================
 public class InstrumentListener implements Listener {
     
+    // Hotbar slot 9, which the player returns to after each note.
+    private static final int RESET_SLOT = 8;
+
     private final InstrumentPlugin plugin;
     private final InstrumentManager manager;
 
@@ -30,7 +33,8 @@ public class InstrumentListener implements Listener {
         Player player = event.getPlayer();
         String instrument = manager.getInstrument(player.getInventory().getItemInOffHand());
         
-        if (instrument == null) {
+        // Pressing the reset slot again sends nothing, so it cannot play a note.
+        if (instrument == null || event.getNewSlot() == RESET_SLOT) {
             return;
         }
         
@@ -74,7 +78,7 @@ public class InstrumentListener implements Listener {
         // Switch back to 9th hotbar slot after playing (so we can use the same note multiple times).
         // The event must be cancelled too: otherwise the server applies the pressed slot after this
         // handler, while the client stays on slot 9, and Paper then ignores the next press of that key.
-        player.getInventory().setHeldItemSlot(8);
+        player.getInventory().setHeldItemSlot(RESET_SLOT);
         event.setCancelled(true);
     }
 }

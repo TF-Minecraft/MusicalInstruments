@@ -152,13 +152,26 @@ class InstrumentListenerTest {
     void unmappedSlotsChangeSlotNormally() {
         holdLute();
 
+        PlayerItemHeldEvent event = pressSlot(7);
+
+        verify(manager).getSoundKey("lute", 7, false);
+        assertFalse(event.isCancelled());
+        assertEquals(6, player.getInventory().getHeldItemSlot());
+        assertTrue(player.getHeardSounds().isEmpty());
+        verifyNoInteractions(plugin);
+    }
+
+    @Test
+    void theResetSlotNeverPlaysANote() {
+        holdLute();
+        when(manager.getSoundKey(any(), anyInt(), anyBoolean())).thenReturn("instruments.lute_9c_single");
+
         PlayerItemHeldEvent event = pressSlot(9);
 
-        verify(manager).getSoundKey("lute", 9, false);
+        verify(manager, never()).getSoundKey(any(), anyInt(), anyBoolean());
         assertFalse(event.isCancelled());
         assertEquals(8, player.getInventory().getHeldItemSlot());
         assertTrue(player.getHeardSounds().isEmpty());
-        verifyNoInteractions(plugin);
     }
 
     @Test
