@@ -27,9 +27,13 @@ Technical documentation is maintained in [TF-Minecraft/Docs](https://github.com/
 
 ## Tests and coverage
 
-With Java 21 installed, run `mvn clean verify`. Tests use JUnit, Mockito, and
-MockBukkit and run without a live Minecraft server. JaCoCo writes its report to
-`target/site/jacoco/`, and `verify` requires 100% instruction and branch coverage.
+With Java 21 installed, run `mvn clean verify`. Tests use JUnit 5, Mockito, and
+MockBukkit for playback, commands, item resolution, configuration, and lifecycle
+behaviour. Surefire writes test results to `target/surefire-reports/`; JaCoCo
+writes HTML and XML reports to `target/site/jacoco/`. Verification requires 100%
+instruction and branch coverage, with no production-code exclusions. Tests use
+stand-ins for item plugins; live integrations and resource-pack audio still
+need Minecraft server and client testing.
 
 ## License
 
