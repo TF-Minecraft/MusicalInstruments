@@ -24,7 +24,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class InstrumentCommandTest {
-    private static final String USAGE = "§cUsage: /instruments <keybinds|list|give|reload>";
+    private static final String USAGE = "§cUsage: /instruments <play|keybinds|list|give|reload>";
     private static final String NO_PERMISSION = "§cYou don't have permission to do that!";
     private static final String PLAYERS_ONLY = "§cOnly players can use this command!";
 
@@ -78,7 +78,7 @@ class InstrumentCommandTest {
 
     @Test
     void everySubcommandChecksPermission() {
-        for (String subcommand : List.of("keybinds", "list", "give", "reload")) {
+        for (String subcommand : List.of("play", "keybinds", "list", "give", "reload")) {
             run(player, subcommand);
             assertEquals(NO_PERMISSION, player.nextMessage());
         }
@@ -202,7 +202,7 @@ class InstrumentCommandTest {
     @Test
     void completesPermittedSubcommands() {
         assertEquals(List.of(), complete(player, ""));
-        assertEquals(List.of("keybinds", "list", "give", "reload"), complete(operator, ""));
+        assertEquals(List.of("play", "keybinds", "list", "give", "reload"), complete(operator, ""));
         assertEquals(List.of("reload"), complete(operator, "R"));
         assertEquals(List.of(), complete(operator, "x"));
     }

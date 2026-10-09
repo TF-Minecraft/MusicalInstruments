@@ -1,0 +1,17 @@
+# On-screen instrument keyboard (7 notes x 3 octaves).
+# Needs the tfmc_instruments:keyboard font from the server resource pack.
+# Restart the plugin/server after changing these settings.
+enabled: true
+# Right-click with an instrument (main hand, or off hand with an empty main hand) opens it.
+# /instruments play always works.
+open-on-right-click: true
+# small, medium or large. Players can change their own size under "Instrument Options...".
+default-size: medium
+# Flash and ring animation on the circle you play.
+ring-effect: true
+# Top row = high octave, middle row = the instrument's normal notes, bottom row = low octave.
+# Instruments with a recorded second octave (their sneak sounds are *_single) use those
+# recordings for the top row; otherwise the normal notes are pitched by these factors.
+high-row-pitch: 2.0
+low-row-pitch: 0.5
+note-particles: true

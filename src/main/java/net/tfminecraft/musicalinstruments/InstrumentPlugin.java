@@ -7,6 +7,8 @@ import org.bstats.charts.SingleLineChart;
 import org.bukkit.plugin.java.JavaPlugin;
 import net.tfminecraft.musicalinstruments.commands.InstrumentCommand;
 import net.tfminecraft.musicalinstruments.items.ItemResolver;
+import net.tfminecraft.musicalinstruments.keyboard.KeyboardService;
+import net.tfminecraft.musicalinstruments.keyboard.KeyboardSettings;
 import net.tfminecraft.musicalinstruments.listeners.InstrumentListener;
 import net.tfminecraft.musicalinstruments.managers.InstrumentManager;
 
@@ -23,6 +25,7 @@ public class InstrumentPlugin extends JavaPlugin {
     private static final int BSTATS_PLUGIN_ID = 33322;
 
     private InstrumentManager manager;
+    private KeyboardService keyboard;
 
     // Play counts since the last bStats submission.
     // Written by the listener and drained when bStats collects chart data every 30 minutes.
@@ -48,6 +51,14 @@ public class InstrumentPlugin extends JavaPlugin {
 
         // Register event listeners
         getServer().getPluginManager().registerEvents(new InstrumentListener(this, manager), this);
+
+        // On-screen 7 x 3 keyboard (needs the tfmc_instruments:keyboard font in the resource pack).
+        KeyboardSettings keyboardSettings = KeyboardSettings.load(this);
+        if (keyboardSettings.enabled()) {
+            keyboard = new KeyboardService(this, manager, keyboardSettings);
+            getServer().getPluginManager().registerEvents(keyboard, this);
+            keyboard.start();
+        }
 
         setupMetrics();
     }
@@ -77,6 +88,17 @@ public class InstrumentPlugin extends JavaPlugin {
             }
             return snapshot;
         }));
+    }
+
+    @Override
+    public void onDisable() {
+        if (keyboard != null) {
+            keyboard.close();
+        }
+    }
+
+    public KeyboardService getKeyboard() {
+        return keyboard;
     }
 
     public void recordInstrumentPlay(String instrument) {
