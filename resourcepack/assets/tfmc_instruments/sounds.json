@@ -1,0 +1,149 @@
+{
+ "celtic_harp.a4": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/a4"
+   }
+  ]
+ },
+ "celtic_harp.a5": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/a5"
+   }
+  ]
+ },
+ "celtic_harp.a6": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/a6"
+   }
+  ]
+ },
+ "celtic_harp.b4": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/b4"
+   }
+  ]
+ },
+ "celtic_harp.b5": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/b5"
+   }
+  ]
+ },
+ "celtic_harp.b6": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/b6"
+   }
+  ]
+ },
+ "celtic_harp.c4": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/c4"
+   }
+  ]
+ },
+ "celtic_harp.c5": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/c5"
+   }
+  ]
+ },
+ "celtic_harp.c6": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/c6"
+   }
+  ]
+ },
+ "celtic_harp.d4": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/d4"
+   }
+  ]
+ },
+ "celtic_harp.d5": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/d5"
+   }
+  ]
+ },
+ "celtic_harp.d6": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/d6"
+   }
+  ]
+ },
+ "celtic_harp.e4": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/e4"
+   }
+  ]
+ },
+ "celtic_harp.e5": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/e5"
+   }
+  ]
+ },
+ "celtic_harp.e6": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/e6"
+   }
+  ]
+ },
+ "celtic_harp.f4": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/f4"
+   }
+  ]
+ },
+ "celtic_harp.f5": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/f5"
+   }
+  ]
+ },
+ "celtic_harp.f6": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/f6"
+   }
+  ]
+ },
+ "celtic_harp.g4": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/g4"
+   }
+  ]
+ },
+ "celtic_harp.g5": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/g5"
+   }
+  ]
+ },
+ "celtic_harp.g6": {
+  "sounds": [
+   {
+    "name": "tfmc_instruments:celtic_harp/g6"
+   }
+  ]
+ }
+}

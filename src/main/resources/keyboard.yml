@@ -15,3 +15,12 @@ ring-effect: true
 high-row-pitch: 2.0
 low-row-pitch: 0.5
 note-particles: true
+
+# Optional: give an instrument its own sound for every cell instead of pitching its hotbar notes.
+# rows = [top row, middle row, bottom row], each C D E F G A B. Sounds must exist in the resource pack.
+instruments:
+  celtic_harp:
+    rows:
+      - [tfmc_instruments:celtic_harp.c6, tfmc_instruments:celtic_harp.d6, tfmc_instruments:celtic_harp.e6, tfmc_instruments:celtic_harp.f6, tfmc_instruments:celtic_harp.g6, tfmc_instruments:celtic_harp.a6, tfmc_instruments:celtic_harp.b6]
+      - [tfmc_instruments:celtic_harp.c5, tfmc_instruments:celtic_harp.d5, tfmc_instruments:celtic_harp.e5, tfmc_instruments:celtic_harp.f5, tfmc_instruments:celtic_harp.g5, tfmc_instruments:celtic_harp.a5, tfmc_instruments:celtic_harp.b5]
+      - [tfmc_instruments:celtic_harp.c4, tfmc_instruments:celtic_harp.d4, tfmc_instruments:celtic_harp.e4, tfmc_instruments:celtic_harp.f4, tfmc_instruments:celtic_harp.g4, tfmc_instruments:celtic_harp.a4, tfmc_instruments:celtic_harp.b4]

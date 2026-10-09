@@ -30,6 +30,10 @@ public final class NoteMap {
         boolean chords = sneak != null && sneak.contains("chord");
         boolean octave = sneak != null && !chords;
         float pitch = KeyboardSettings.clampPitch(manager.getPitch(instrument));
+        String[][] rows = settings.rowsFor(instrument);
+        if (rows != null && !(row == 1 && chordMode && chords)) {
+            return new Note(rows[row][column], pitch);
+        }
         return switch (row) {
             case 0 -> octave
                     ? new Note(sneak, pitch)
