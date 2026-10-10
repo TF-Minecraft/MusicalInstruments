@@ -27,9 +27,12 @@ flashed around the keyboard after every note until the next frame arrived). Side
 pure white menu fills, such as the focus border of a selected list entry, are hidden too while
 the server pack is active. Re-check the shader when the client version changes.
 
-## No background blur
+## No background blur behind the keyboard
 
-`assets/minecraft/post_effect/blur.json` replaces the 1.21.10 menu blur with two plain copy
-passes, so the world stays sharp behind the keyboard like in the reference video. A resource
-pack cannot tell menus apart, so other menus (pause, options, dialogs) are not blurred either
-while the server pack is active. Delete the file to get the blur back.
+Only the keyboard is drawn without the menu blur. While it is open the server shows a title with
+a 2x2 dot in an exact colour (`U+E3F0` in the keyboard font, RGB 2,3,5); titles are drawn around
+the screen centre, so the dot covers the centre pixel. `assets/minecraft/post_effect/blur.json`
+runs `assets/tfmc_instruments/shaders/post/keyboard_blur.fsh`, the vanilla box blur plus one
+check: if the centre pixel has that colour the image passes through unblurred and the last pass
+paints over the dot. Every other menu blurs as usual. The title is renewed every 2 seconds while
+the keyboard is open and cleared as soon as the player moves, turns or uses an item.

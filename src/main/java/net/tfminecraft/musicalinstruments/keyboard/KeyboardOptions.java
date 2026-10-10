@@ -24,7 +24,6 @@ import org.bukkit.persistence.PersistentDataType;
 /** Per-player keyboard preferences and the "Instrument Options..." dialog. */
 public final class KeyboardOptions {
     public static final Key DONE = Key.key(KeyboardView.NAMESPACE, "done");
-    public static final Key CLOSE = Key.key(KeyboardView.NAMESPACE, "close");
     private final KeyboardSettings settings;
     private final NamespacedKey sizeKey;
     private final NamespacedKey ringsKey;
@@ -87,10 +86,6 @@ public final class KeyboardOptions {
                 .width(150)
                 .action(DialogAction.customClick(DONE, null))
                 .build();
-        ActionButton close = ActionButton.builder(Component.text("Close keyboard"))
-                .width(150)
-                .action(DialogAction.customClick(CLOSE, null))
-                .build();
         return Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Instrument Options"))
                         .canCloseWithEscape(true)
@@ -99,6 +94,7 @@ public final class KeyboardOptions {
                         .body(body)
                         .inputs(inputs)
                         .build())
-                .type(DialogType.multiAction(List.of(close)).columns(1).exitAction(done).build()));
+                // A notice has one button; Escape runs it too.
+                .type(DialogType.notice(done)));
     }
 }

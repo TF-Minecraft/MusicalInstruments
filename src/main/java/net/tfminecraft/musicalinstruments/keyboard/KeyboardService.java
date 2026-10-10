@@ -9,7 +9,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.LongSupplier;
+import java.time.Duration;
 import net.kyori.adventure.key.Key;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.ShadowColor;
+import net.kyori.adventure.title.Title;
 import net.tfminecraft.musicalinstruments.InstrumentPlugin;
 import net.tfminecraft.musicalinstruments.events.InstrumentPlayEvent;
 import net.tfminecraft.musicalinstruments.keyboard.KeyboardView.Cell;
@@ -47,6 +52,19 @@ public final class KeyboardService implements Listener {
     static final long FRAME_MS = 50L;
     /** Keyboard actions (notes and menu buttons) allowed per player per rolling second. */
     static final int ACTIONS_PER_SECOND = 20;
+    /** How often (ticks) the blur marker title is renewed while the keyboard is open. */
+    static final int MARKER_REFRESH_TICKS = 40;
+    /**
+     * Shown as a title while the keyboard is open: a dot at the screen centre that the resource
+     * pack's blur shader looks for, so only this menu is drawn without background blur.
+     */
+    static final Title BLUR_MARKER = Title.title(
+            Component.text(String.valueOf(KeyboardFont.BLUR_MARKER))
+                    .font(KeyboardFont.FONT)
+                    .color(NamedTextColor.WHITE)
+                    .shadowColor(ShadowColor.none()),
+            Component.empty(),
+            Title.Times.times(Duration.ZERO, Duration.ofSeconds(3), Duration.ZERO));
     private final InstrumentPlugin plugin;
     private final InstrumentManager manager;
     private final KeyboardSettings settings;
@@ -82,6 +100,7 @@ public final class KeyboardService implements Listener {
             Player player = Bukkit.getPlayer(session.player);
             if (player != null && session.open) {
                 player.closeDialog();
+                hideMarker(player, session);
             }
         }
         this.sessions.clear();
@@ -114,6 +133,9 @@ public final class KeyboardService implements Listener {
         session.dirty = false;
         session.lastSendTick = Bukkit.getCurrentTick();
         player.showDialog(KeyboardView.dialog(prefs.size(), cells));
+        if (!session.markerShown) {
+            this.showMarker(player, session);
+        }
     }
 
     private Cell[] cells(Session session, boolean rings, long now) {
@@ -170,6 +192,9 @@ public final class KeyboardService implements Listener {
                 it.remove();
                 continue;
             }
+            if (session.open && Bukkit.getCurrentTick() - session.markerTick >= MARKER_REFRESH_TICKS) {
+                this.showMarker(player, session);
+            }
             // Keep going until an idle frame has gone out, even if the server stalled past the animation.
             if (!session.open || session.inOptions || player.isDead()
                     || (!session.dirty && !session.showingFrame && !session.animating(now))) {
@@ -177,6 +202,7 @@ public final class KeyboardService implements Listener {
             }
             if (!canShow(player.getOpenInventory().getType())) {
                 session.open = false;
+                hideMarker(player, session);
                 continue;
             }
             if (session.lastSendTick == Bukkit.getCurrentTick()) {
@@ -229,7 +255,7 @@ public final class KeyboardService implements Listener {
             return;
         }
         Player player = connection.getPlayer();
-        KeyboardOptions.Choice choice = id.equals(KeyboardOptions.DONE) || id.equals(KeyboardOptions.CLOSE)
+        KeyboardOptions.Choice choice = id.equals(KeyboardOptions.DONE)
                 ? KeyboardOptions.Choice.read(event.getDialogResponseView())
                 : null;
         Runnable task = () -> this.handleClick(player, id, choice);
@@ -264,6 +290,7 @@ public final class KeyboardService implements Listener {
             if (!session.free && !session.instrument.equals(this.heldInstrument(player))) {
                 this.sessions.remove(player.getUniqueId());
                 player.closeDialog();
+                hideMarker(player, session);
                 return;
             }
             session.open = true;
@@ -297,14 +324,19 @@ public final class KeyboardService implements Listener {
             Arrays.fill(session.started, Long.MIN_VALUE / 2);
             Arrays.fill(session.chordStarted, Long.MIN_VALUE / 2);
             this.send(player, session, now);
-            return;
         }
-        if (id.equals(KeyboardOptions.CLOSE)) {
-            if (choice != null) {
-                this.options.save(player, choice);
-            }
-            this.sessions.remove(player.getUniqueId());
-            player.closeDialog();
+    }
+
+    private void showMarker(Player player, Session session) {
+        player.showTitle(BLUR_MARKER);
+        session.markerTick = Bukkit.getCurrentTick();
+        session.markerShown = true;
+    }
+
+    private static void hideMarker(Player player, Session session) {
+        if (session.markerShown) {
+            player.clearTitle();
+            session.markerShown = false;
         }
     }
 
@@ -356,6 +388,7 @@ public final class KeyboardService implements Listener {
         Session session = this.sessions.get(player.getUniqueId());
         if (session != null) {
             session.open = false;
+            hideMarker(player, session);
         }
     }
 
@@ -439,6 +472,8 @@ public final class KeyboardService implements Listener {
         boolean showingFrame;
         int lastSendTick = -1;
         int openedTick = -1;
+        int markerTick = Integer.MIN_VALUE / 2;
+        boolean markerShown;
         String signature = "";
 
         Session(UUID player, String instrument, boolean free) {

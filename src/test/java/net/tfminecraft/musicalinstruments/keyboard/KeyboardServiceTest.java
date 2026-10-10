@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -362,12 +363,30 @@ class KeyboardServiceTest {
 
         service.handleClick(player, Key.key(KeyboardView.NAMESPACE, "unknown"), null);
         assertEquals(4, sent());
+        assertTrue(service.isOpen(player));
+    }
 
-        service.handleClick(player, KeyboardOptions.CLOSE, null);
-        assertFalse(service.isOpen(player));
-        service.open(player, "lute", false);
-        service.handleClick(player, KeyboardOptions.CLOSE, new KeyboardOptions.Choice("SMALL", null));
-        assertFalse(service.isOpen(player));
+    @Test
+    void aTitleMarkerKeepsTheBackgroundSharpWhileTheKeyboardIsOpen() {
+        PlayerMock spied = spy(player);
+        service.open(spied, "lute", false);
+        verify(spied).showTitle(KeyboardService.BLUR_MARKER);
+
+        nextTick(0);
+        service.handleClick(spied, KeyboardView.noteKey(0), null); // redraws do not resend the marker
+        verify(spied, times(1)).showTitle(KeyboardService.BLUR_MARKER);
+
+        // While open the marker is renewed before it runs out.
+        server.getScheduler().performTicks(KeyboardService.MARKER_REFRESH_TICKS);
+        service.tick();
+        service.tick();
+
+        // Any sign the keyboard is gone clears it, once.
+        service.onHeld(new PlayerItemHeldEvent(spied, 0, 1));
+        service.onSwing(new PlayerAnimationEvent(spied, org.bukkit.event.player.PlayerAnimationType.ARM_SWING));
+        verify(spied, times(1)).clearTitle();
+        server.getScheduler().performTicks(KeyboardService.MARKER_REFRESH_TICKS);
+        service.tick(); // closed: no renewal
     }
 
     @Test
@@ -386,9 +405,8 @@ class KeyboardServiceTest {
         DialogResponseView view = mock(DialogResponseView.class);
         when(view.getText("size")).thenReturn("SMALL");
         service.onCustomClick(clickEvent(KeyboardOptions.DONE, connection, view));
-        service.onCustomClick(clickEvent(KeyboardOptions.CLOSE, connection, view));
-        assertFalse(service.isOpen(player));
-        verify(view, times(2)).getText("size");
+        assertTrue(service.isOpen(player));
+        verify(view).getText("size");
 
         // Off the main thread the click waits for the next tick.
         service.open(player, "lute", false);

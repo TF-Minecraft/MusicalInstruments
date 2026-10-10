@@ -5,40 +5,216 @@
     "passes": [
         {
             "vertex_shader": "minecraft:core/screenquad",
-            "fragment_shader": "minecraft:post/blit",
+            "fragment_shader": "tfmc_instruments:post/keyboard_blur",
             "inputs": [
                 {
                     "sampler_name": "In",
-                    "target": "minecraft:main"
+                    "target": "minecraft:main",
+                    "bilinear": true
                 }
             ],
             "output": "swap",
             "uniforms": {
-                "BlitConfig": [
+                "BlurConfig": [
                     {
-                        "name": "ColorModulate",
-                        "type": "vec4",
-                        "value": [ 1.0, 1.0, 1.0, 1.0 ]
+                        "name": "BlurDir",
+                        "type": "vec2",
+                        "value": [
+                            1.0,
+                            0.0
+                        ]
+                    },
+                    {
+                        "name": "Radius",
+                        "type": "float",
+                        "value": 0.0
+                    }
+                ],
+                "KeyboardConfig": [
+                    {
+                        "name": "Final",
+                        "type": "float",
+                        "value": 0.0
                     }
                 ]
             }
         },
         {
             "vertex_shader": "minecraft:core/screenquad",
-            "fragment_shader": "minecraft:post/blit",
+            "fragment_shader": "tfmc_instruments:post/keyboard_blur",
             "inputs": [
                 {
                     "sampler_name": "In",
-                    "target": "swap"
+                    "target": "swap",
+                    "bilinear": true
                 }
             ],
             "output": "minecraft:main",
             "uniforms": {
-                "BlitConfig": [
+                "BlurConfig": [
                     {
-                        "name": "ColorModulate",
-                        "type": "vec4",
-                        "value": [ 1.0, 1.0, 1.0, 1.0 ]
+                        "name": "BlurDir",
+                        "type": "vec2",
+                        "value": [
+                            0.0,
+                            1.0
+                        ]
+                    },
+                    {
+                        "name": "Radius",
+                        "type": "float",
+                        "value": 0.0
+                    }
+                ],
+                "KeyboardConfig": [
+                    {
+                        "name": "Final",
+                        "type": "float",
+                        "value": 0.0
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "tfmc_instruments:post/keyboard_blur",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main",
+                    "bilinear": true
+                }
+            ],
+            "output": "swap",
+            "uniforms": {
+                "BlurConfig": [
+                    {
+                        "name": "BlurDir",
+                        "type": "vec2",
+                        "value": [
+                            1.0,
+                            0.0
+                        ]
+                    },
+                    {
+                        "name": "Radius",
+                        "type": "float",
+                        "value": 0.0
+                    }
+                ],
+                "KeyboardConfig": [
+                    {
+                        "name": "Final",
+                        "type": "float",
+                        "value": 0.0
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "tfmc_instruments:post/keyboard_blur",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "swap",
+                    "bilinear": true
+                }
+            ],
+            "output": "minecraft:main",
+            "uniforms": {
+                "BlurConfig": [
+                    {
+                        "name": "BlurDir",
+                        "type": "vec2",
+                        "value": [
+                            0.0,
+                            1.0
+                        ]
+                    },
+                    {
+                        "name": "Radius",
+                        "type": "float",
+                        "value": 0.0
+                    }
+                ],
+                "KeyboardConfig": [
+                    {
+                        "name": "Final",
+                        "type": "float",
+                        "value": 0.0
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "tfmc_instruments:post/keyboard_blur",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main",
+                    "bilinear": true
+                }
+            ],
+            "output": "swap",
+            "uniforms": {
+                "BlurConfig": [
+                    {
+                        "name": "BlurDir",
+                        "type": "vec2",
+                        "value": [
+                            1.0,
+                            0.0
+                        ]
+                    },
+                    {
+                        "name": "Radius",
+                        "type": "float",
+                        "value": 0.0
+                    }
+                ],
+                "KeyboardConfig": [
+                    {
+                        "name": "Final",
+                        "type": "float",
+                        "value": 0.0
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "tfmc_instruments:post/keyboard_blur",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "swap",
+                    "bilinear": true
+                }
+            ],
+            "output": "minecraft:main",
+            "uniforms": {
+                "BlurConfig": [
+                    {
+                        "name": "BlurDir",
+                        "type": "vec2",
+                        "value": [
+                            0.0,
+                            1.0
+                        ]
+                    },
+                    {
+                        "name": "Radius",
+                        "type": "float",
+                        "value": 0.0
+                    }
+                ],
+                "KeyboardConfig": [
+                    {
+                        "name": "Final",
+                        "type": "float",
+                        "value": 1.0
                     }
                 ]
             }

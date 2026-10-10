@@ -12,6 +12,8 @@ public final class KeyboardFont {
     public static final int ROWS = 3;
     public static final int CELLS = COLUMNS * ROWS;
     public static final char BUTTON = '\uE300';
+    /** 2x2 dot in an exact colour; as a title it tells the pack's blur shader to skip the blur. */
+    public static final char BLUR_MARKER = '\uE3F0';
     public static final int BUTTON_WIDTH = 150;
     private static final int SPACE_POS = 0xE400;
     private static final int SPACE_NEG = 0xE410;
