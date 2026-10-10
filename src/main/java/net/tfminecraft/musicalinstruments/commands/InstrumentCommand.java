@@ -19,7 +19,7 @@ import java.util.List;
 // ====================================
 public class InstrumentCommand implements CommandExecutor, TabCompleter {
 
-    private static final String USAGE = "§cUsage: /instruments <keybinds|list|give|reload>";
+    private static final String USAGE = "§cUsage: /instruments <play|keybinds|list|give|reload>";
 
     private final InstrumentPlugin plugin;
     private final InstrumentManager manager;
@@ -39,6 +39,11 @@ public class InstrumentCommand implements CommandExecutor, TabCompleter {
 
         // Handle different subcommands
         switch (args[0].toLowerCase()) {
+            case "play":
+                if (requirePermission(sender, "instruments.use") && requirePlayer(sender)) {
+                    handlePlay((Player) sender, args);
+                }
+                break;
             case "keybinds":
                 if (requirePermission(sender, "instruments.use") && requirePlayer(sender)) {
                     handleKeybinds((Player) sender);
@@ -132,6 +137,32 @@ public class InstrumentCommand implements CommandExecutor, TabCompleter {
     }
 
     // ====================================
+    // Handles the /instruments play [instrument] command: opens the on-screen keyboard
+    // ====================================
+    private void handlePlay(Player player, String[] args) {
+        if (plugin.getKeyboard() == null) {
+            player.sendMessage("§cThe instrument keyboard is disabled.");
+            return;
+        }
+        String instrument = plugin.getKeyboard().heldInstrument(player);
+        boolean free = false;
+        // Staff can open any instrument by name without holding it.
+        if (args.length >= 2 && player.hasPermission("instruments.give")) {
+            instrument = manager.findInstrument(args[1]);
+            free = true;
+            if (instrument == null) {
+                player.sendMessage("§cUnknown instrument: §e" + args[1]);
+                return;
+            }
+        }
+        if (instrument == null) {
+            player.sendMessage("§cHold an instrument to play it!");
+            return;
+        }
+        plugin.getKeyboard().open(player, instrument, free);
+    }
+
+    // ====================================
     // Handles the /instruments give <instrument> command
     // ====================================
     private void handleGive(Player player, String[] args) {
@@ -174,6 +205,7 @@ public class InstrumentCommand implements CommandExecutor, TabCompleter {
         if (args.length == 1) {
             List<String> subcommands = new ArrayList<>();
             if (sender.hasPermission("instruments.use")) {
+                subcommands.add("play");
                 subcommands.add("keybinds");
                 subcommands.add("list");
             }
@@ -187,7 +219,8 @@ public class InstrumentCommand implements CommandExecutor, TabCompleter {
             return filterPrefix(subcommands, args[0]);
         }
 
-        if (args.length == 2 && args[0].equalsIgnoreCase("give") && sender.hasPermission("instruments.give")) {
+        if (args.length == 2 && (args[0].equalsIgnoreCase("give") || args[0].equalsIgnoreCase("play"))
+                && sender.hasPermission("instruments.give")) {
             return filterPrefix(new ArrayList<>(manager.getAllInstruments()), args[1]);
         }
 

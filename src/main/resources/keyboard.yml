@@ -1,0 +1,91 @@
+# On-screen instrument keyboard (7 notes x 3 octaves).
+# Needs the tfmc_instruments:keyboard font from the server resource pack.
+# Restart the plugin/server after changing these settings.
+enabled: true
+# Right-click with an instrument (main hand, or off hand with an empty main hand) opens it.
+# /instruments play always works.
+open-on-right-click: true
+# small, medium or large. Players can change their own size under "Instrument Options...".
+default-size: medium
+# Flash and ring animation on the circle you play.
+ring-effect: true
+# Top row = high octave, middle row = the instrument's normal notes, bottom row = low octave.
+# Instruments with a recorded second octave (their sneak sounds are *_single) use those
+# recordings for the top row; otherwise the normal notes are pitched by these factors.
+high-row-pitch: 2.0
+low-row-pitch: 0.5
+note-particles: true
+
+# Each instrument's own sound for every cell, instead of pitching its hotbar notes (instruments not
+# listed fall back to that). rows = [top row, middle row, bottom row], each C D E F G A B.
+# Sounds must exist in the resource pack; resourcepack/tools/make_notes.py builds them and this block.
+instruments:
+  accordion:
+    rows:
+      - [tfmc_instruments:accordion.c5, tfmc_instruments:accordion.d5, tfmc_instruments:accordion.e5, tfmc_instruments:accordion.f5, tfmc_instruments:accordion.g5, tfmc_instruments:accordion.a5, tfmc_instruments:accordion.b5]
+      - [tfmc_instruments:accordion.c4, tfmc_instruments:accordion.d4, tfmc_instruments:accordion.e4, tfmc_instruments:accordion.f4, tfmc_instruments:accordion.g4, tfmc_instruments:accordion.a4, tfmc_instruments:accordion.b4]
+      - [tfmc_instruments:accordion.c3, tfmc_instruments:accordion.d3, tfmc_instruments:accordion.e3, tfmc_instruments:accordion.f3, tfmc_instruments:accordion.g3, tfmc_instruments:accordion.a3, tfmc_instruments:accordion.b3]
+    chords:
+      - [tfmc_instruments:accordion.chord_c5, tfmc_instruments:accordion.chord_d5, tfmc_instruments:accordion.chord_e5, tfmc_instruments:accordion.chord_f5, tfmc_instruments:accordion.chord_g5, tfmc_instruments:accordion.chord_a5, tfmc_instruments:accordion.chord_b5]
+      - [tfmc_instruments:accordion.chord_c4, tfmc_instruments:accordion.chord_d4, tfmc_instruments:accordion.chord_e4, tfmc_instruments:accordion.chord_f4, tfmc_instruments:accordion.chord_g4, tfmc_instruments:accordion.chord_a4, tfmc_instruments:accordion.chord_b4]
+      - [tfmc_instruments:accordion.chord_c3, tfmc_instruments:accordion.chord_d3, tfmc_instruments:accordion.chord_e3, tfmc_instruments:accordion.chord_f3, tfmc_instruments:accordion.chord_g3, tfmc_instruments:accordion.chord_a3, tfmc_instruments:accordion.chord_b3]
+  bagpipe:
+    rows:
+      - [tfmc_instruments:bagpipe.c5, tfmc_instruments:bagpipe.d5, tfmc_instruments:bagpipe.e5, tfmc_instruments:bagpipe.f5, tfmc_instruments:bagpipe.g5, tfmc_instruments:bagpipe.a5, tfmc_instruments:bagpipe.b5]
+      - [tfmc_instruments:bagpipe.c4, tfmc_instruments:bagpipe.d4, tfmc_instruments:bagpipe.e4, tfmc_instruments:bagpipe.f4, tfmc_instruments:bagpipe.g4, tfmc_instruments:bagpipe.a4, tfmc_instruments:bagpipe.b4]
+      - [tfmc_instruments:bagpipe.c3, tfmc_instruments:bagpipe.d3, tfmc_instruments:bagpipe.e3, tfmc_instruments:bagpipe.f3, tfmc_instruments:bagpipe.g3, tfmc_instruments:bagpipe.a3, tfmc_instruments:bagpipe.b3]
+  celtic_harp:
+    rows:
+      - [tfmc_instruments:celtic_harp.c6, tfmc_instruments:celtic_harp.d6, tfmc_instruments:celtic_harp.e6, tfmc_instruments:celtic_harp.f6, tfmc_instruments:celtic_harp.g6, tfmc_instruments:celtic_harp.a6, tfmc_instruments:celtic_harp.b6]
+      - [tfmc_instruments:celtic_harp.c5, tfmc_instruments:celtic_harp.d5, tfmc_instruments:celtic_harp.e5, tfmc_instruments:celtic_harp.f5, tfmc_instruments:celtic_harp.g5, tfmc_instruments:celtic_harp.a5, tfmc_instruments:celtic_harp.b5]
+      - [tfmc_instruments:celtic_harp.c4, tfmc_instruments:celtic_harp.d4, tfmc_instruments:celtic_harp.e4, tfmc_instruments:celtic_harp.f4, tfmc_instruments:celtic_harp.g4, tfmc_instruments:celtic_harp.a4, tfmc_instruments:celtic_harp.b4]
+    chords:
+      - [tfmc_instruments:celtic_harp.chord_c6, tfmc_instruments:celtic_harp.chord_d6, tfmc_instruments:celtic_harp.chord_e6, tfmc_instruments:celtic_harp.chord_f6, tfmc_instruments:celtic_harp.chord_g6, tfmc_instruments:celtic_harp.chord_a6, tfmc_instruments:celtic_harp.chord_b6]
+      - [tfmc_instruments:celtic_harp.chord_c5, tfmc_instruments:celtic_harp.chord_d5, tfmc_instruments:celtic_harp.chord_e5, tfmc_instruments:celtic_harp.chord_f5, tfmc_instruments:celtic_harp.chord_g5, tfmc_instruments:celtic_harp.chord_a5, tfmc_instruments:celtic_harp.chord_b5]
+      - [tfmc_instruments:celtic_harp.chord_c4, tfmc_instruments:celtic_harp.chord_d4, tfmc_instruments:celtic_harp.chord_e4, tfmc_instruments:celtic_harp.chord_f4, tfmc_instruments:celtic_harp.chord_g4, tfmc_instruments:celtic_harp.chord_a4, tfmc_instruments:celtic_harp.chord_b4]
+  dulcimer:
+    rows:
+      - [tfmc_instruments:dulcimer.c5, tfmc_instruments:dulcimer.d5, tfmc_instruments:dulcimer.e5, tfmc_instruments:dulcimer.f5, tfmc_instruments:dulcimer.g5, tfmc_instruments:dulcimer.a5, tfmc_instruments:dulcimer.b5]
+      - [tfmc_instruments:dulcimer.c4, tfmc_instruments:dulcimer.d4, tfmc_instruments:dulcimer.e4, tfmc_instruments:dulcimer.f4, tfmc_instruments:dulcimer.g4, tfmc_instruments:dulcimer.a4, tfmc_instruments:dulcimer.b4]
+      - [tfmc_instruments:dulcimer.c3, tfmc_instruments:dulcimer.d3, tfmc_instruments:dulcimer.e3, tfmc_instruments:dulcimer.f3, tfmc_instruments:dulcimer.g3, tfmc_instruments:dulcimer.a3, tfmc_instruments:dulcimer.b3]
+    chords:
+      - [tfmc_instruments:dulcimer.chord_c5, tfmc_instruments:dulcimer.chord_d5, tfmc_instruments:dulcimer.chord_e5, tfmc_instruments:dulcimer.chord_f5, tfmc_instruments:dulcimer.chord_g5, tfmc_instruments:dulcimer.chord_a5, tfmc_instruments:dulcimer.chord_b5]
+      - [tfmc_instruments:dulcimer.chord_c4, tfmc_instruments:dulcimer.chord_d4, tfmc_instruments:dulcimer.chord_e4, tfmc_instruments:dulcimer.chord_f4, tfmc_instruments:dulcimer.chord_g4, tfmc_instruments:dulcimer.chord_a4, tfmc_instruments:dulcimer.chord_b4]
+      - [tfmc_instruments:dulcimer.chord_c3, tfmc_instruments:dulcimer.chord_d3, tfmc_instruments:dulcimer.chord_e3, tfmc_instruments:dulcimer.chord_f3, tfmc_instruments:dulcimer.chord_g3, tfmc_instruments:dulcimer.chord_a3, tfmc_instruments:dulcimer.chord_b3]
+  flute:
+    rows:
+      - [tfmc_instruments:flute.c6, tfmc_instruments:flute.d6, tfmc_instruments:flute.e6, tfmc_instruments:flute.f6, tfmc_instruments:flute.g6, tfmc_instruments:flute.a6, tfmc_instruments:flute.b6]
+      - [tfmc_instruments:flute.c5, tfmc_instruments:flute.d5, tfmc_instruments:flute.e5, tfmc_instruments:flute.f5, tfmc_instruments:flute.g5, tfmc_instruments:flute.a5, tfmc_instruments:flute.b5]
+      - [tfmc_instruments:flute.c4, tfmc_instruments:flute.d4, tfmc_instruments:flute.e4, tfmc_instruments:flute.f4, tfmc_instruments:flute.g4, tfmc_instruments:flute.a4, tfmc_instruments:flute.b4]
+  kalimba:
+    rows:
+      - [tfmc_instruments:kalimba.c6, tfmc_instruments:kalimba.d6, tfmc_instruments:kalimba.e6, tfmc_instruments:kalimba.f6, tfmc_instruments:kalimba.g6, tfmc_instruments:kalimba.a6, tfmc_instruments:kalimba.b6]
+      - [tfmc_instruments:kalimba.c5, tfmc_instruments:kalimba.d5, tfmc_instruments:kalimba.e5, tfmc_instruments:kalimba.f5, tfmc_instruments:kalimba.g5, tfmc_instruments:kalimba.a5, tfmc_instruments:kalimba.b5]
+      - [tfmc_instruments:kalimba.c4, tfmc_instruments:kalimba.d4, tfmc_instruments:kalimba.e4, tfmc_instruments:kalimba.f4, tfmc_instruments:kalimba.g4, tfmc_instruments:kalimba.a4, tfmc_instruments:kalimba.b4]
+    chords:
+      - [tfmc_instruments:kalimba.chord_c6, tfmc_instruments:kalimba.chord_d6, tfmc_instruments:kalimba.chord_e6, tfmc_instruments:kalimba.chord_f6, tfmc_instruments:kalimba.chord_g6, tfmc_instruments:kalimba.chord_a6, tfmc_instruments:kalimba.chord_b6]
+      - [tfmc_instruments:kalimba.chord_c5, tfmc_instruments:kalimba.chord_d5, tfmc_instruments:kalimba.chord_e5, tfmc_instruments:kalimba.chord_f5, tfmc_instruments:kalimba.chord_g5, tfmc_instruments:kalimba.chord_a5, tfmc_instruments:kalimba.chord_b5]
+      - [tfmc_instruments:kalimba.chord_c4, tfmc_instruments:kalimba.chord_d4, tfmc_instruments:kalimba.chord_e4, tfmc_instruments:kalimba.chord_f4, tfmc_instruments:kalimba.chord_g4, tfmc_instruments:kalimba.chord_a4, tfmc_instruments:kalimba.chord_b4]
+  lute:
+    rows:
+      - [tfmc_instruments:lute.c5, tfmc_instruments:lute.d5, tfmc_instruments:lute.e5, tfmc_instruments:lute.f5, tfmc_instruments:lute.g5, tfmc_instruments:lute.a5, tfmc_instruments:lute.b5]
+      - [tfmc_instruments:lute.c4, tfmc_instruments:lute.d4, tfmc_instruments:lute.e4, tfmc_instruments:lute.f4, tfmc_instruments:lute.g4, tfmc_instruments:lute.a4, tfmc_instruments:lute.b4]
+      - [tfmc_instruments:lute.c3, tfmc_instruments:lute.d3, tfmc_instruments:lute.e3, tfmc_instruments:lute.f3, tfmc_instruments:lute.g3, tfmc_instruments:lute.a3, tfmc_instruments:lute.b3]
+    chords:
+      - [tfmc_instruments:lute.chord_c5, tfmc_instruments:lute.chord_d5, tfmc_instruments:lute.chord_e5, tfmc_instruments:lute.chord_f5, tfmc_instruments:lute.chord_g5, tfmc_instruments:lute.chord_a5, tfmc_instruments:lute.chord_b5]
+      - [tfmc_instruments:lute.chord_c4, tfmc_instruments:lute.chord_d4, tfmc_instruments:lute.chord_e4, tfmc_instruments:lute.chord_f4, tfmc_instruments:lute.chord_g4, tfmc_instruments:lute.chord_a4, tfmc_instruments:lute.chord_b4]
+      - [tfmc_instruments:lute.chord_c3, tfmc_instruments:lute.chord_d3, tfmc_instruments:lute.chord_e3, tfmc_instruments:lute.chord_f3, tfmc_instruments:lute.chord_g3, tfmc_instruments:lute.chord_a3, tfmc_instruments:lute.chord_b3]
+  trumpet:
+    rows:
+      - [tfmc_instruments:trumpet.c5, tfmc_instruments:trumpet.d5, tfmc_instruments:trumpet.e5, tfmc_instruments:trumpet.f5, tfmc_instruments:trumpet.g5, tfmc_instruments:trumpet.a5, tfmc_instruments:trumpet.b5]
+      - [tfmc_instruments:trumpet.c4, tfmc_instruments:trumpet.d4, tfmc_instruments:trumpet.e4, tfmc_instruments:trumpet.f4, tfmc_instruments:trumpet.g4, tfmc_instruments:trumpet.a4, tfmc_instruments:trumpet.b4]
+      - [tfmc_instruments:trumpet.c3, tfmc_instruments:trumpet.d3, tfmc_instruments:trumpet.e3, tfmc_instruments:trumpet.f3, tfmc_instruments:trumpet.g3, tfmc_instruments:trumpet.a3, tfmc_instruments:trumpet.b3]
+  vielle:
+    rows:
+      - [tfmc_instruments:vielle.c5, tfmc_instruments:vielle.d5, tfmc_instruments:vielle.e5, tfmc_instruments:vielle.f5, tfmc_instruments:vielle.g5, tfmc_instruments:vielle.a5, tfmc_instruments:vielle.b5]
+      - [tfmc_instruments:vielle.c4, tfmc_instruments:vielle.d4, tfmc_instruments:vielle.e4, tfmc_instruments:vielle.f4, tfmc_instruments:vielle.g4, tfmc_instruments:vielle.a4, tfmc_instruments:vielle.b4]
+      - [tfmc_instruments:vielle.c3, tfmc_instruments:vielle.d3, tfmc_instruments:vielle.e3, tfmc_instruments:vielle.f3, tfmc_instruments:vielle.g3, tfmc_instruments:vielle.a3, tfmc_instruments:vielle.b3]
+    chords:
+      - [tfmc_instruments:vielle.chord_c5, tfmc_instruments:vielle.chord_d5, tfmc_instruments:vielle.chord_e5, tfmc_instruments:vielle.chord_f5, tfmc_instruments:vielle.chord_g5, tfmc_instruments:vielle.chord_a5, tfmc_instruments:vielle.chord_b5]
+      - [tfmc_instruments:vielle.chord_c4, tfmc_instruments:vielle.chord_d4, tfmc_instruments:vielle.chord_e4, tfmc_instruments:vielle.chord_f4, tfmc_instruments:vielle.chord_g4, tfmc_instruments:vielle.chord_a4, tfmc_instruments:vielle.chord_b4]
+      - [tfmc_instruments:vielle.chord_c3, tfmc_instruments:vielle.chord_d3, tfmc_instruments:vielle.chord_e3, tfmc_instruments:vielle.chord_f3, tfmc_instruments:vielle.chord_g3, tfmc_instruments:vielle.chord_a3, tfmc_instruments:vielle.chord_b3]

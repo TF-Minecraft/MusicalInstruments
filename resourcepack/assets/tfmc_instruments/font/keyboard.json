@@ -1,0 +1,560 @@
+{
+ "providers": [
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_c.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue000"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_c_lit.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue010"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_d.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue001"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_d_lit.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue011"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_e.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue002"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_e_lit.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue012"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_f.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue003"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_f_lit.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue013"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_g.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue004"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_g_lit.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue014"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_a.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue005"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_a_lit.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue015"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_b.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue006"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_b_lit.png",
+   "height": 32,
+   "ascent": 1,
+   "chars": [
+    "\ue016"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_ring0.png",
+   "height": 36,
+   "ascent": 3,
+   "chars": [
+    "\ue020"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_ring1.png",
+   "height": 40,
+   "ascent": 5,
+   "chars": [
+    "\ue021"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_ring2.png",
+   "height": 42,
+   "ascent": 6,
+   "chars": [
+    "\ue022"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_c.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue100"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_c_lit.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue110"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_d.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue101"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_d_lit.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue111"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_e.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue102"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_e_lit.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue112"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_f.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue103"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_f_lit.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue113"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_g.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue104"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_g_lit.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue114"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_a.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue105"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_a_lit.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue115"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_b.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue106"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_b_lit.png",
+   "height": 40,
+   "ascent": 0,
+   "chars": [
+    "\ue116"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_ring0.png",
+   "height": 46,
+   "ascent": 3,
+   "chars": [
+    "\ue120"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_ring1.png",
+   "height": 50,
+   "ascent": 5,
+   "chars": [
+    "\ue121"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_ring2.png",
+   "height": 52,
+   "ascent": 6,
+   "chars": [
+    "\ue122"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_c.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue200"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_c_lit.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue210"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_d.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue201"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_d_lit.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue211"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_e.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue202"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_e_lit.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue212"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_f.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue203"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_f_lit.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue213"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_g.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue204"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_g_lit.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue214"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_a.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue205"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_a_lit.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue215"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_b.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue206"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_b_lit.png",
+   "height": 52,
+   "ascent": 2,
+   "chars": [
+    "\ue216"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_ring0.png",
+   "height": 58,
+   "ascent": 5,
+   "chars": [
+    "\ue220"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_ring1.png",
+   "height": 64,
+   "ascent": 8,
+   "chars": [
+    "\ue221"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_ring2.png",
+   "height": 70,
+   "ascent": 11,
+   "chars": [
+    "\ue222"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/options_button.png",
+   "height": 20,
+   "ascent": 4,
+   "chars": [
+    "\ue300"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/blur_marker.png",
+   "height": 1,
+   "ascent": -3,
+   "chars": [
+    "\ue3f0"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_mark.png",
+   "height": 7,
+   "ascent": 7,
+   "chars": [
+    "\ue030"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_mark_lit.png",
+   "height": 7,
+   "ascent": 7,
+   "chars": [
+    "\ue031"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_mark.png",
+   "height": 7,
+   "ascent": 7,
+   "chars": [
+    "\ue130"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_mark_lit.png",
+   "height": 7,
+   "ascent": 7,
+   "chars": [
+    "\ue131"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_mark.png",
+   "height": 8,
+   "ascent": 7,
+   "chars": [
+    "\ue230"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_mark_lit.png",
+   "height": 8,
+   "ascent": 7,
+   "chars": [
+    "\ue231"
+   ]
+  },
+  {
+   "type": "space",
+   "advances": {
+    "\ue400": 1,
+    "\ue410": -1,
+    "\ue401": 2,
+    "\ue411": -2,
+    "\ue402": 4,
+    "\ue412": -4,
+    "\ue403": 8,
+    "\ue413": -8,
+    "\ue404": 16,
+    "\ue414": -16,
+    "\ue405": 32,
+    "\ue415": -32,
+    "\ue406": 64,
+    "\ue416": -64,
+    "\ue407": 128,
+    "\ue417": -128,
+    "\ue408": 256,
+    "\ue418": -256,
+    "\ue409": 512,
+    "\ue419": -512
+   }
+  }
+ ]
+}

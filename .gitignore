@@ -55,3 +55,6 @@ Desktop.ini
 
 # Technical documentation is maintained in TF-Minecraft/Docs
 /docs/
+
+# Note audio is built from the server pack recordings (not published); run resourcepack/tools/make_notes.py.
+/resourcepack/assets/tfmc_instruments/sounds/

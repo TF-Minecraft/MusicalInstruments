@@ -123,4 +123,19 @@ class InstrumentPluginTest {
         plugin.recordInstrumentPlay("flute");
         assertEquals("{\"chartId\":\"instrument_usage\",\"data\":{\"values\":{\"flute\":1}}}", submit(AdvancedPie.class));
     }
+
+    @Test
+    void startsTheKeyboardUnlessItIsDisabled() throws java.io.IOException {
+        assertNotNull(plugin.getKeyboard());
+        java.nio.file.Path settings = plugin.getDataFolder().toPath().resolve("keyboard.yml");
+        assertTrue(settings.toFile().isFile());
+
+        plugin.onDisable();
+        java.nio.file.Files.writeString(settings, "enabled: false" + System.lineSeparator());
+        try (MockedConstruction<Metrics> ignored = mockConstruction(Metrics.class)) {
+            plugin.onEnable();
+        }
+        assertNull(plugin.getKeyboard());
+        plugin.onDisable();
+    }
 }

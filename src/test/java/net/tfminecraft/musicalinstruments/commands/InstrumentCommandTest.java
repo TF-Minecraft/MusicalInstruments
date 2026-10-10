@@ -1,6 +1,7 @@
 package net.tfminecraft.musicalinstruments.commands;
 
 import net.tfminecraft.musicalinstruments.InstrumentPlugin;
+import net.tfminecraft.musicalinstruments.keyboard.KeyboardService;
 import net.tfminecraft.musicalinstruments.managers.InstrumentManager;
 import org.bukkit.Material;
 import org.bukkit.command.Command;
@@ -24,7 +25,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class InstrumentCommandTest {
-    private static final String USAGE = "§cUsage: /instruments <keybinds|list|give|reload>";
+    private static final String USAGE = "§cUsage: /instruments <play|keybinds|list|give|reload>";
     private static final String NO_PERMISSION = "§cYou don't have permission to do that!";
     private static final String PLAYERS_ONLY = "§cOnly players can use this command!";
 
@@ -78,7 +79,7 @@ class InstrumentCommandTest {
 
     @Test
     void everySubcommandChecksPermission() {
-        for (String subcommand : List.of("keybinds", "list", "give", "reload")) {
+        for (String subcommand : List.of("play", "keybinds", "list", "give", "reload")) {
             run(player, subcommand);
             assertEquals(NO_PERMISSION, player.nextMessage());
         }
@@ -202,7 +203,7 @@ class InstrumentCommandTest {
     @Test
     void completesPermittedSubcommands() {
         assertEquals(List.of(), complete(player, ""));
-        assertEquals(List.of("keybinds", "list", "give", "reload"), complete(operator, ""));
+        assertEquals(List.of("play", "keybinds", "list", "give", "reload"), complete(operator, ""));
         assertEquals(List.of("reload"), complete(operator, "R"));
         assertEquals(List.of(), complete(operator, "x"));
     }
@@ -216,5 +217,52 @@ class InstrumentCommandTest {
         assertEquals(List.of(), complete(player, "give", ""));
         assertEquals(List.of(), complete(operator, "list", ""));
         assertEquals(List.of(), complete(operator, "give", "lute", ""));
+    }
+
+    @Test
+    void playOpensTheKeyboardForTheHeldInstrument() {
+        run(operator, "play");
+        assertEquals("§cThe instrument keyboard is disabled.", operator.nextMessage());
+
+        KeyboardService keyboard = mock(KeyboardService.class);
+        when(plugin.getKeyboard()).thenReturn(keyboard);
+        run(operator, "play");
+        assertEquals("§cHold an instrument to play it!", operator.nextMessage());
+
+        when(keyboard.heldInstrument(operator)).thenReturn("lute");
+        run(operator, "play");
+        verify(keyboard).open(operator, "lute", false);
+        assertNull(operator.nextMessage());
+    }
+
+    @Test
+    void staffCanPlayAnyInstrumentByName() {
+        KeyboardService keyboard = mock(KeyboardService.class);
+        when(plugin.getKeyboard()).thenReturn(keyboard);
+        when(manager.findInstrument("Harp")).thenReturn("celtic_harp");
+
+        run(operator, "play", "Harp");
+        verify(keyboard).open(operator, "celtic_harp", true);
+        run(operator, "play", "kazoo");
+        assertEquals("§cUnknown instrument: §ekazoo", operator.nextMessage());
+
+        // Without the give permission the name is ignored and the held instrument is used.
+        player.addAttachment(MockBukkit.createMockPlugin(), "instruments.use", true);
+        when(keyboard.heldInstrument(player)).thenReturn("lute");
+        run(player, "play", "Harp");
+        verify(keyboard).open(player, "lute", false);
+    }
+
+    @Test
+    void playIsForPlayersOnly() {
+        run(console, "play");
+        assertEquals(PLAYERS_ONLY, console.nextMessage());
+    }
+
+    @Test
+    void completesInstrumentNamesForPlay() {
+        loadInstruments("lute", "celtic_harp");
+        assertEquals(List.of("celtic_harp"), complete(operator, "play", "c"));
+        assertEquals(List.of(), complete(player, "play", ""));
     }
 }

@@ -8,7 +8,7 @@ softdepend: [MMOItems, ItemsAdder, Nexo]
 commands:
   instruments:
     description: Musical instruments commands
-    usage: /instruments <keybinds|list|give|reload>
+    usage: /instruments <play|keybinds|list|give|reload>
 
 permissions:
   instruments.use:
