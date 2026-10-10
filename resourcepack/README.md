@@ -18,3 +18,11 @@ recordings, C6 is the recorded high C, and the other notes are shifted one octav
 rubberband filter (keeps the pluck's attack and length). `tools/pitch.py` checks the result.
 The .ogg files are not committed (they come from the server pack's recordings): generate them
 with `python tools/make_harp.py <folder with the celtic_harp_*_single.ogg files>` before copying `assets/`.
+
+## Focus outline
+
+`assets/minecraft/shaders/core/gui.fsh` replaces the 1.21.10 menu fill shader so pure opaque
+white fills are skipped. The client draws that white outline around dialog text you click (it
+flashed around the keyboard after every note until the next frame arrived). Side effect: other
+pure white menu fills, such as the focus border of a selected list entry, are hidden too while
+the server pack is active. Re-check the shader when the client version changes.
