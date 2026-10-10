@@ -11,6 +11,7 @@ import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.ShadowColor;
 import net.tfminecraft.musicalinstruments.keyboard.KeyboardFont.Size;
@@ -23,6 +24,8 @@ public final class KeyboardView {
     public static final String NAMESPACE = "mik";
     public static final Key OPTIONS = Key.key(NAMESPACE, "o");
     public static final String NOTE_PREFIX = "n";
+    public static final String CHORD_PREFIX = "c";
+    private static final String[] NOTE_NAMES = {"C", "D", "E", "F", "G", "A", "B"};
     private static final Key DEFAULT_FONT = Key.key("minecraft", "default");
     private static final String OPTIONS_LABEL = "Instrument Options...";
     /** Clickable padding either side of the label (the label is about 100 px wide). */
@@ -40,13 +43,27 @@ public final class KeyboardView {
         return Key.key(NAMESPACE, NOTE_PREFIX + cell);
     }
 
-    /** Returns the cell index for a click identifier, or -1. */
+    /** The strip under a circle plays the chord on that note. */
+    public static Key chordKey(int cell) {
+        return Key.key(NAMESPACE, CHORD_PREFIX + cell);
+    }
+
+    /** Returns the cell index for a note click identifier, or -1. */
     public static int cellOf(Key key) {
-        if (!NAMESPACE.equals(key.namespace()) || !key.value().startsWith(NOTE_PREFIX)) {
+        return indexOf(key, NOTE_PREFIX);
+    }
+
+    /** Returns the cell index for a chord click identifier, or -1. */
+    public static int chordOf(Key key) {
+        return indexOf(key, CHORD_PREFIX);
+    }
+
+    private static int indexOf(Key key, String prefix) {
+        if (!NAMESPACE.equals(key.namespace()) || !key.value().startsWith(prefix)) {
             return -1;
         }
         try {
-            int cell = Integer.parseInt(key.value().substring(NOTE_PREFIX.length()));
+            int cell = Integer.parseInt(key.value().substring(prefix.length()));
             return cell >= 0 && cell < KeyboardFont.CELLS ? cell : -1;
         } catch (NumberFormatException ex) {
             return -1;
@@ -115,10 +132,18 @@ public final class KeyboardView {
                     out.append(Component.newline());
                 }
                 first = false;
+                // The bottom line of each row is the gap under the circles: clicking there plays the chord.
+                boolean chordLine = line == size.lines() - 1;
                 for (int column = 0; column < KeyboardFont.COLUMNS; column++) {
                     int index = row * KeyboardFont.COLUMNS + column;
                     String text = line == 0 ? noteCell(size, column, cells[index], lead) : blankCell;
-                    out.append(Component.text(text).clickEvent(ClickEvent.custom(noteKey(index), "0b")));
+                    if (chordLine) {
+                        out.append(Component.text(text)
+                                .clickEvent(ClickEvent.custom(chordKey(index), "0b"))
+                                .hoverEvent(HoverEvent.showText(Component.text(NOTE_NAMES[column] + " chord"))));
+                    } else {
+                        out.append(Component.text(text).clickEvent(ClickEvent.custom(noteKey(index), "0b")));
+                    }
                 }
             }
         }

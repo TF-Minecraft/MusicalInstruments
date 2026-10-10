@@ -5,6 +5,7 @@ import io.papermc.paper.event.player.PlayerCustomClickEvent;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.LongSupplier;
@@ -183,18 +184,28 @@ public final class KeyboardService implements Listener {
         }
     }
 
-    private void play(Player player, Session session, int index) {
-        KeyboardOptions.Prefs prefs = this.options.prefs(player);
-        NoteMap.Note note = NoteMap.resolve(this.manager, this.settings, session.instrument,
-                index / KeyboardFont.COLUMNS, index % KeyboardFont.COLUMNS, prefs.chords());
-        if (note == null) {
+    /** Plays a note, or with {@code chord} the chord on that note. */
+    private void play(Player player, Session session, int index, boolean chord) {
+        int row = index / KeyboardFont.COLUMNS;
+        int column = index % KeyboardFont.COLUMNS;
+        List<NoteMap.Note> notes;
+        if (chord) {
+            notes = NoteMap.chord(this.manager, this.settings, session.instrument, row, column);
+        } else {
+            NoteMap.Note note = NoteMap.resolve(this.manager, this.settings, session.instrument, row, column);
+            notes = note == null ? List.of() : List.of(note);
+        }
+        if (notes.isEmpty()) {
             return;
         }
         float volume = (float) this.manager.getVolume(session.instrument);
         Location location = player.getLocation();
-        player.getWorld().playSound(location, note.sound(), SoundCategory.RECORDS, volume, note.pitch());
+        for (NoteMap.Note note : notes) {
+            player.getWorld().playSound(location, note.sound(), SoundCategory.RECORDS, volume, note.pitch());
+        }
+        // One play per click, also for a chord.
         this.plugin.recordInstrumentPlay(session.instrument);
-        Bukkit.getPluginManager().callEvent(new InstrumentPlayEvent(player, session.instrument, note.sound()));
+        Bukkit.getPluginManager().callEvent(new InstrumentPlayEvent(player, session.instrument, notes.getFirst().sound()));
         if (this.settings.particles()) {
             // Count 0 turns the x offset into the note colour (0..1 across 24 note-block colours).
             double colour = (2 - index / KeyboardFont.COLUMNS) * 7 + index % KeyboardFont.COLUMNS;
@@ -237,7 +248,9 @@ public final class KeyboardService implements Listener {
         if (!this.limits.computeIfAbsent(player.getUniqueId(), uuid -> new Limiter()).allow(now)) {
             return;
         }
-        int index = KeyboardView.cellOf(id);
+        int note = KeyboardView.cellOf(id);
+        int chord = KeyboardView.chordOf(id);
+        int index = Math.max(note, chord);
         if (index >= 0) {
             if (session.inOptions || player.isDead() || !player.hasPermission("instruments.use")) {
                 return; // a stale click from a screen that is no longer the keyboard
@@ -248,8 +261,15 @@ public final class KeyboardService implements Listener {
                 return;
             }
             session.open = true;
-            session.started[index] = now;
-            this.play(player, session, index);
+            if (chord >= 0) {
+                // Light every note of the chord so it reads as a chord.
+                for (int cell : NoteMap.chordCells(index / KeyboardFont.COLUMNS, index % KeyboardFont.COLUMNS)) {
+                    session.started[cell] = now;
+                }
+            } else {
+                session.started[index] = now;
+            }
+            this.play(player, session, index, chord >= 0);
             // Re-send at once (lit circle, clears the client's focus outline), at most once a tick.
             if (session.lastSendTick == Bukkit.getCurrentTick()) {
                 session.dirty = true;
@@ -260,7 +280,7 @@ public final class KeyboardService implements Listener {
         }
         if (id.equals(KeyboardView.OPTIONS)) {
             session.inOptions = true;
-            player.showDialog(this.options.dialog(player, session.instrument, this.manager));
+            player.showDialog(this.options.dialog(player, session.instrument));
             return;
         }
         if (id.equals(KeyboardOptions.DONE)) {

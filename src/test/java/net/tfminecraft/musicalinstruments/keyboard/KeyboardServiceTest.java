@@ -178,6 +178,38 @@ class KeyboardServiceTest {
     }
 
     @Test
+    void theStripUnderACirclePlaysItsChord() {
+        when(manager.getSoundKey("lute", 4, true)).thenReturn("lute_4f_chord");
+        service.open(player, "lute", false);
+        nextTick(0);
+        service.handleClick(player, KeyboardView.chordKey(10), null); // F chord, recorded
+        assertEquals("lute_4f_chord", player.getHeardSounds().getFirst().getSound());
+        assertEquals(1, played.size());
+        assertEquals(2, sent());
+
+        nextTick(300);
+        service.handleClick(player, KeyboardView.chordKey(14), null); // C chord, built from C E G
+        assertEquals(4, player.getHeardSounds().size());
+        assertEquals("lute_1", player.getHeardSounds().get(1).getSound());
+        assertEquals("lute_3", player.getHeardSounds().get(2).getSound());
+        assertEquals("lute_5", player.getHeardSounds().get(3).getSound());
+        assertEquals(0.5f, player.getHeardSounds().get(1).getPitch());
+        assertEquals(2, played.size()); // one play per click
+        verify(plugin, times(2)).recordInstrumentPlay("lute");
+
+        // The chord's three circles flash, then the keyboard rests again.
+        nextTick(250);
+        service.tick();
+        assertEquals(4, sent());
+        when(manager.getSoundKey("lute", 2, false)).thenReturn(null);
+        when(manager.getSoundKey("lute", 4, false)).thenReturn(null);
+        when(manager.getSoundKey("lute", 6, false)).thenReturn(null);
+        nextTick(0);
+        service.handleClick(player, KeyboardView.chordKey(1), null); // D F A: nothing to play
+        assertEquals(4, player.getHeardSounds().size());
+    }
+
+    @Test
     void severalClicksInOneTickSendOnce() {
         service.open(player, "lute", false);
         click(0); // same tick as opening
@@ -192,7 +224,7 @@ class KeyboardServiceTest {
     @Test
     void ringsOffOnlyFlashes() {
         service.open(player, "lute", false);
-        service.handleClick(player, KeyboardOptions.DONE, new KeyboardOptions.Choice(null, false, null));
+        service.handleClick(player, KeyboardOptions.DONE, new KeyboardOptions.Choice(null, false));
         nextTick(0);
         click(3);
         int afterClick = sent();
@@ -309,7 +341,7 @@ class KeyboardServiceTest {
         service.tick(); // options on screen: no keyboard redraw
         assertEquals(2, sent());
 
-        service.handleClick(player, KeyboardOptions.DONE, new KeyboardOptions.Choice("LARGE", true, false));
+        service.handleClick(player, KeyboardOptions.DONE, new KeyboardOptions.Choice("LARGE", true));
         assertEquals(3, sent());
         service.handleClick(player, KeyboardOptions.DONE, null);
         assertEquals(4, sent());
@@ -320,7 +352,7 @@ class KeyboardServiceTest {
         service.handleClick(player, KeyboardOptions.CLOSE, null);
         assertFalse(service.isOpen(player));
         service.open(player, "lute", false);
-        service.handleClick(player, KeyboardOptions.CLOSE, new KeyboardOptions.Choice("SMALL", null, null));
+        service.handleClick(player, KeyboardOptions.CLOSE, new KeyboardOptions.Choice("SMALL", null));
         assertFalse(service.isOpen(player));
     }
 

@@ -16,7 +16,6 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.tfminecraft.musicalinstruments.InstrumentPlugin;
 import net.tfminecraft.musicalinstruments.keyboard.KeyboardFont.Size;
-import net.tfminecraft.musicalinstruments.managers.InstrumentManager;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -29,25 +28,23 @@ public final class KeyboardOptions {
     private final KeyboardSettings settings;
     private final NamespacedKey sizeKey;
     private final NamespacedKey ringsKey;
-    private final NamespacedKey chordsKey;
 
     public KeyboardOptions(InstrumentPlugin plugin, KeyboardSettings settings) {
         this.settings = settings;
         this.sizeKey = new NamespacedKey(plugin, "keyboard_size");
         this.ringsKey = new NamespacedKey(plugin, "keyboard_rings");
-        this.chordsKey = new NamespacedKey(plugin, "keyboard_chords");
     }
 
-    public record Prefs(Size size, boolean rings, boolean chords) {
+    public record Prefs(Size size, boolean rings) {
     }
 
     /** Values submitted from the options dialog; null fields were not shown. */
-    public record Choice(String size, Boolean rings, Boolean chords) {
+    public record Choice(String size, Boolean rings) {
         static Choice read(DialogResponseView view) {
             if (view == null) {
                 return null;
             }
-            return new Choice(view.getText("size"), view.getBoolean("rings"), view.getBoolean("chords"));
+            return new Choice(view.getText("size"), view.getBoolean("rings"));
         }
     }
 
@@ -55,8 +52,7 @@ public final class KeyboardOptions {
         PersistentDataContainer data = player.getPersistentDataContainer();
         Size size = Size.byName(data.get(this.sizeKey, PersistentDataType.STRING), this.settings.defaultSize());
         Byte rings = data.get(this.ringsKey, PersistentDataType.BYTE);
-        Byte chords = data.get(this.chordsKey, PersistentDataType.BYTE);
-        return new Prefs(size, rings == null ? this.settings.defaultRings() : rings != 0, chords != null && chords != 0);
+        return new Prefs(size, rings == null ? this.settings.defaultRings() : rings != 0);
     }
 
     public void save(Player player, Choice choice) {
@@ -67,12 +63,9 @@ public final class KeyboardOptions {
         if (choice.rings() != null) {
             data.set(this.ringsKey, PersistentDataType.BYTE, (byte) (choice.rings() ? 1 : 0));
         }
-        if (choice.chords() != null) {
-            data.set(this.chordsKey, PersistentDataType.BYTE, (byte) (choice.chords() ? 1 : 0));
-        }
     }
 
-    public Dialog dialog(Player player, String instrument, InstrumentManager manager) {
+    public Dialog dialog(Player player, String instrument) {
         Prefs prefs = this.prefs(player);
         List<SingleOptionDialogInput.OptionEntry> sizes = new ArrayList<>();
         for (Size size : Size.values()) {
@@ -81,16 +74,14 @@ public final class KeyboardOptions {
         List<DialogInput> inputs = new ArrayList<>();
         inputs.add(DialogInput.singleOption("size", Component.text("Keyboard size"), sizes).width(200).build());
         inputs.add(DialogInput.bool("rings", Component.text("Ring effect (off: flash only)")).initial(prefs.rings()).build());
-        boolean chords = NoteMap.hasChords(manager, instrument);
-        if (chords) {
-            inputs.add(DialogInput.bool("chords", Component.text("Middle row plays chords")).initial(prefs.chords()).build());
-        }
         String name = instrument.replace('_', ' ');
         List<DialogBody> body = List.of(
                 DialogBody.plainMessage(Component.text("Playing: ", NamedTextColor.GRAY)
                         .append(Component.text(Character.toUpperCase(name.charAt(0)) + name.substring(1), NamedTextColor.GOLD)), 250),
                 DialogBody.plainMessage(Component.text(
-                        "Top row: high notes. Middle row: normal notes. Bottom row: low notes.", NamedTextColor.GRAY), 250));
+                        "Top row: high notes. Middle row: normal notes. Bottom row: low notes.", NamedTextColor.GRAY), 250),
+                DialogBody.plainMessage(Component.text(
+                        "Chords: click just below a circle to play the chord on that note.", NamedTextColor.GRAY), 250));
         ActionButton done = ActionButton.builder(Component.text("Done"))
                 .tooltip(Component.text("Back to the keyboard"))
                 .width(150)

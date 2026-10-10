@@ -64,6 +64,9 @@ class KeyboardViewTest {
         assertEquals(-1, KeyboardView.cellOf(Key.key(KeyboardView.NAMESPACE, "nx")));
         assertEquals(-1, KeyboardView.cellOf(Key.key(KeyboardView.NAMESPACE, "n21")));
         assertEquals(-1, KeyboardView.cellOf(Key.key(KeyboardView.NAMESPACE, "n-1")));
+        assertEquals(7, KeyboardView.chordOf(KeyboardView.chordKey(7)));
+        assertEquals(-1, KeyboardView.chordOf(KeyboardView.noteKey(7)));
+        assertEquals(-1, KeyboardView.cellOf(KeyboardView.chordKey(7)));
     }
 
     @Test
@@ -91,7 +94,11 @@ class KeyboardViewTest {
                     assertNotNull(click);
                     assertEquals(ClickEvent.Action.CUSTOM, click.action());
                     ClickEvent.Payload.Custom payload = (ClickEvent.Payload.Custom) click.payload();
-                    assertEquals(KeyboardView.noteKey(row * KeyboardFont.COLUMNS + column), payload.key());
+                    int index = row * KeyboardFont.COLUMNS + column;
+                    // The bottom line of each row is the chord strip under the circles.
+                    boolean chordLine = line % size.lines() == size.lines() - 1;
+                    assertEquals(chordLine ? KeyboardView.chordKey(index) : KeyboardView.noteKey(index), payload.key());
+                    assertEquals(chordLine, segment.hoverEvent() != null);
                 }
             }
         }
@@ -101,6 +108,13 @@ class KeyboardViewTest {
         assertTrue(ringed.indexOf(Size.MEDIUM.ringChar(0)) >= 0);
         String unknown = lines(KeyboardView.grid(Size.MEDIUM, cells)).get(Size.MEDIUM.lines()).get(6).content();
         assertEquals(-1, unknown.indexOf(Size.MEDIUM.ringChar(0)));
+    }
+
+    @Test
+    void chordStripsSayWhichChordTheyPlay() {
+        List<List<TextComponent>> lines = lines(KeyboardView.grid(Size.SMALL, idle()));
+        TextComponent strip = lines.get(Size.SMALL.lines() - 1).get(4);
+        assertEquals(Component.text("G chord"), strip.hoverEvent().value());
     }
 
     @Test
