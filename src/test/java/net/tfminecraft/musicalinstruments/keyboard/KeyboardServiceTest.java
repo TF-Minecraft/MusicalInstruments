@@ -390,6 +390,19 @@ class KeyboardServiceTest {
     }
 
     @Test
+    void theOptionsScreenIsBlurredLikeOtherMenus() {
+        PlayerMock spied = spy(player);
+        service.open(spied, "lute", false);
+        service.handleClick(spied, KeyboardView.OPTIONS, null);
+        verify(spied).clearTitle();
+        server.getScheduler().performTicks(KeyboardService.MARKER_REFRESH_TICKS);
+        service.tick(); // no renewal behind the options screen
+        verify(spied, times(1)).showTitle(KeyboardService.BLUR_MARKER);
+        service.handleClick(spied, KeyboardOptions.DONE, new KeyboardOptions.Choice("SMALL", true));
+        verify(spied, times(2)).showTitle(KeyboardService.BLUR_MARKER);
+    }
+
+    @Test
     void customClicksAreRoutedToTheKeyboard() throws InterruptedException {
         service.open(player, "lute", false);
         PlayerGameConnection connection = mock(PlayerGameConnection.class);

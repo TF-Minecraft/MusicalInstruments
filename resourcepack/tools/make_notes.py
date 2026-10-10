@@ -140,9 +140,20 @@ def main():
         json.dump(dict(sorted(sounds.items())), f, indent=1)
     config = os.path.join(os.path.dirname(HERE), "src", "main", "resources", "keyboard.yml")
     with open(config, encoding="utf-8") as f:
-        head = f.read().split("\ninstruments:")[0]
-    with open(config, "w", encoding="utf-8", newline="\n") as f:
-        f.write(head + "\n" + "\n".join(yml) + "\n")
+        content = f.read()
+    marker = "\ninstruments:"
+    if marker not in content:
+        raise SystemExit(f"{config} has no top-level 'instruments:' block to replace")
+    head = content.split(marker, 1)[0]
+    # Write next to it and swap in, so a failed run leaves keyboard.yml as it was.
+    temp = config + ".tmp"
+    try:
+        with open(temp, "w", encoding="utf-8", newline="\n") as f:
+            f.write(head + "\n" + "\n".join(yml) + "\n")
+        os.replace(temp, config)
+    finally:
+        if os.path.exists(temp):
+            os.remove(temp)
     print(len(sounds), "sound events")
 
 

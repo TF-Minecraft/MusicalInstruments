@@ -73,7 +73,7 @@ public final class KeyboardOptions {
         List<DialogInput> inputs = new ArrayList<>();
         inputs.add(DialogInput.singleOption("size", Component.text("Keyboard size"), sizes).width(200).build());
         inputs.add(DialogInput.bool("rings", Component.text("Ring effect (off: flash only)")).initial(prefs.rings()).build());
-        String name = instrument.replace('_', ' ');
+        String name = instrument.isEmpty() ? "instrument" : instrument.replace('_', ' ');
         List<DialogBody> body = List.of(
                 DialogBody.plainMessage(Component.text("Playing: ", NamedTextColor.GRAY)
                         .append(Component.text(Character.toUpperCase(name.charAt(0)) + name.substring(1), NamedTextColor.GOLD)), 250),

@@ -68,7 +68,8 @@ class KeyboardOptionsTest {
             assertNotNull(options.dialog(player, "lute"));
             options.save(player, new Choice("small", false));
             assertNotNull(options.dialog(player, "celtic_harp"));
-            assertEquals(2, stubs.created.size());
+            assertNotNull(options.dialog(player, ""));
+            assertEquals(3, stubs.created.size());
         }
     }
 }

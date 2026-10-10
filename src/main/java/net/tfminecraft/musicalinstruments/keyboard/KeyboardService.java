@@ -200,7 +200,9 @@ public final class KeyboardService implements Listener {
                 it.remove();
                 continue;
             }
-            if (session.open && Bukkit.getCurrentTick() - session.markerTick >= MARKER_REFRESH_TICKS) {
+            // The options screen is blurred like any other menu, so the marker pauses there.
+            if (session.open && !session.inOptions
+                    && Bukkit.getCurrentTick() - session.markerTick >= MARKER_REFRESH_TICKS) {
                 this.showMarker(player, session);
             }
             // Keep going until an idle frame has gone out, even if the server stalled past the animation.
@@ -323,6 +325,7 @@ public final class KeyboardService implements Listener {
         }
         if (id.equals(KeyboardView.OPTIONS)) {
             session.inOptions = true;
+            hideMarker(player, session);
             player.showDialog(this.options.dialog(player, session.instrument));
             return;
         }
