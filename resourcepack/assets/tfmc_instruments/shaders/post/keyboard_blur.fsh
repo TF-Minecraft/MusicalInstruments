@@ -3,9 +3,9 @@
 #moj_import <minecraft:globals.glsl>
 
 // Menu blur (vanilla box blur) that is skipped while the instrument keyboard is open.
-// The server shows a title with a 2x2 dot in the exact MARKER colour at the screen centre
-// (font tfmc_instruments:keyboard, U+E3F0). If the centre pixel has that colour the image is
-// passed through unblurred, and the final pass paints over the dot.
+// The server shows a title with a one-GUI-pixel dot in the exact MARKER colour on the screen's
+// centre pixel (font tfmc_instruments:keyboard, U+E3F0). If a pixel next to the centre has that
+// colour the image is passed through unblurred, and the final pass paints over the dot.
 
 uniform sampler2D InSampler;
 
@@ -33,13 +33,26 @@ bool isMarker(vec4 colour) {
     return all(lessThan(abs(colour.rgb - MARKER), vec3(0.75 / 255.0)));
 }
 
+// The dot is one GUI pixel (GUI scale 1-6 screen pixels); look in a 3x3 patch at the centre.
+bool markerAtCentre() {
+    ivec2 centre = ivec2(InSize * 0.5);
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            if (isMarker(texelFetch(InSampler, centre + ivec2(x, y), 0))) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 void main() {
-    if (isMarker(texelFetch(InSampler, ivec2(InSize * 0.5), 0))) {
+    if (markerAtCentre()) {
         ivec2 pixel = ivec2(gl_FragCoord.xy);
         vec4 here = texelFetch(InSampler, pixel, 0);
         if (Final > 0.5 && isMarker(here)) {
-            // The dot is at most 48 px wide (GUI scale 6); take the colour from beside it.
-            here = texelFetch(InSampler, pixel + ivec2(64, 0), 0);
+            // Take the colour from just beside the dot (at most 6 px wide).
+            here = texelFetch(InSampler, pixel + ivec2(8, 0), 0);
         }
         fragColor = here;
         return;

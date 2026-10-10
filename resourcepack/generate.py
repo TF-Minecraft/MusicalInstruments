@@ -236,11 +236,15 @@ def main():
             bitmap(f"{sname}_ring{k}", ring(rd // px, RING_ALPHA[k], thick, f), rd, ascent + (rd - d) // 2, cp(si, 0x20 + k))
     # Button: 20 tall, top 3 px below line 0 so the label on line 1 (y+9..y+17) is centred on it.
     bitmap("options_button", button(), 20, 4, BUTTON_CP)
-    # Blur marker: a 2x2 dot in an exact colour, shown as a title while the keyboard is open.
-    # Titles are drawn 4x around the screen centre at y = -10; ascent -2 puts the dot over the
-    # centre pixel, where assets/tfmc_instruments/shaders/post/keyboard_blur.fsh looks for it.
-    marker = Image.new("RGBA", (2, 2), BLUR_MARKER)
-    bitmap("blur_marker", marker, 2, -2, BLUR_MARKER_CP)
+    # Blur marker, shown as a title while the keyboard is open. Titles are drawn 4x around the
+    # screen centre (text at x = -width/2, y = -10). One opaque texel of a 4x4 cell with height 1
+    # is 1/4 title unit = exactly one GUI pixel. The texel in the last column/row, with advance 2
+    # (x = -1) and ascent -2 (top = -1), lands on GUI pixel (-1, -1) from the centre: the
+    # crosshair's centre pixel on even-sized screens, so it hides in the crosshair when no menu
+    # is open. assets/tfmc_instruments/shaders/post/keyboard_blur.fsh looks for it there.
+    marker = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+    marker.putpixel((3, 3), BLUR_MARKER)
+    bitmap("blur_marker", marker, 1, -2, BLUR_MARKER_CP)
     for si, (sname, _, _, _, _) in enumerate(SIZES):
         offset = MARK_OFFSETS[sname]
         bitmap(f"{sname}_chord_mark", mark(offset, False), offset + 3, 7, cp(si, 0x30))

@@ -471,7 +471,7 @@
   {
    "type": "bitmap",
    "file": "tfmc_instruments:font/keyboard/blur_marker.png",
-   "height": 2,
+   "height": 1,
    "ascent": -2,
    "chars": [
     "\ue3f0"
