@@ -107,13 +107,13 @@ public final class KeyboardService implements Listener {
     private void send(Player player, Session session, long now) {
         KeyboardOptions.Prefs prefs = this.options.prefs(player);
         Cell[] cells = this.cells(session, prefs.rings(), now);
-        session.signature = prefs.chordStyle() + signature(prefs.size(), cells);
-        session.showingFrame = !session.signature.equals(prefs.chordStyle() + signature(prefs.size(), idle()));
+        session.signature = signature(prefs.size(), cells);
+        session.showingFrame = !session.signature.equals(signature(prefs.size(), idle()));
         session.open = true;
         session.inOptions = false;
         session.dirty = false;
         session.lastSendTick = Bukkit.getCurrentTick();
-        player.showDialog(KeyboardView.dialog(prefs.size(), prefs.chordStyle(), cells));
+        player.showDialog(KeyboardView.dialog(prefs.size(), cells));
     }
 
     private Cell[] cells(Session session, boolean rings, long now) {
@@ -183,7 +183,7 @@ public final class KeyboardService implements Listener {
                 continue;
             }
             KeyboardOptions.Prefs prefs = this.options.prefs(player);
-            String signature = prefs.chordStyle() + signature(prefs.size(), this.cells(session, prefs.rings(), now));
+            String signature = signature(prefs.size(), this.cells(session, prefs.rings(), now));
             if (session.dirty || !signature.equals(session.signature)) {
                 this.send(player, session, now);
             }
@@ -268,7 +268,7 @@ public final class KeyboardService implements Listener {
             }
             session.open = true;
             if (chord >= 0) {
-                // Light the tab and every note of the chord so it reads as a chord.
+                // Light the mark and every note of the chord so it reads as a chord.
                 session.chordStarted[index] = now;
                 for (int cell : NoteMap.chordCells(index / KeyboardFont.COLUMNS, index % KeyboardFont.COLUMNS)) {
                     session.started[cell] = now;

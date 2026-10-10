@@ -43,16 +43,8 @@ class KeyboardFontTest {
         assertEquals(40, Size.MEDIUM.diameter());
         assertEquals(72, Size.LARGE.pitchX());
         assertEquals(7, Size.LARGE.lines());
-        assertEquals(8, Size.LARGE.rowLines(ChordStyle.TABS));
-        assertEquals(7, Size.LARGE.rowLines(ChordStyle.MARKS));
-        assertEquals(7, Size.LARGE.rowLines(ChordStyle.ROW));
-        assertEquals(46, Size.MEDIUM.rowButtonWidth());
-        assertEquals('\uE033', Size.SMALL.markChar(true));
-        assertEquals('\uE146', Size.MEDIUM.rowButtonChar(6, false));
-        assertEquals('\uE250', Size.LARGE.rowButtonChar(0, true));
-        assertEquals(30, Size.MEDIUM.tabWidth());
-        assertEquals('\uE030', Size.SMALL.tabChar(false));
-        assertEquals('\uE231', Size.LARGE.tabChar(true));
+        assertEquals('\uE030', Size.SMALL.markChar(false));
+        assertEquals('\uE231', Size.LARGE.markChar(true));
         assertEquals(3, Size.MEDIUM.ringFrames());
         assertEquals(52, Size.MEDIUM.ring(2));
         assertEquals(7 * 44, Size.SMALL.gridWidth());

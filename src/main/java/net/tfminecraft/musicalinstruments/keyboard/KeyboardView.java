@@ -28,8 +28,6 @@ public final class KeyboardView {
     private static final String[] NOTE_NAMES = {"C", "D", "E", "F", "G", "A", "B"};
     /** Width of the three-dot chord mark glyph. */
     private static final int MARK_WIDTH = 12;
-    /** Text lines of the chord row: the buttons and one more line keeping them clickable. */
-    private static final int CHORD_ROW_LINES = 2;
     private static final Key DEFAULT_FONT = Key.key("minecraft", "default");
     private static final String OPTIONS_LABEL = "Instrument Options...";
     /** Clickable padding either side of the label (the label is about 100 px wide). */
@@ -38,7 +36,7 @@ public final class KeyboardView {
     private KeyboardView() {
     }
 
-    /** Visual state of one note circle and the CHORD tab under it. */
+    /** Visual state of one note circle and the chord mark under it. */
     public record Cell(boolean lit, int ring, boolean chord) {
         public static final Cell IDLE = new Cell(false, -1, false);
 
@@ -78,12 +76,12 @@ public final class KeyboardView {
         }
     }
 
-    public static Dialog dialog(Size size, ChordStyle style, Cell[] cells) {
+    public static Dialog dialog(Size size, Cell[] cells) {
         // An empty dialog_list has no buttons and no footer; the body carries everything.
         // Widths get slack because the client wraps a line whose running width exceeds it.
         List<DialogBody> body = List.of(
                 DialogBody.plainMessage(optionsButton(), KeyboardFont.BUTTON_WIDTH + 16),
-                DialogBody.plainMessage(grid(size, style, cells), size.gridWidth() + 16));
+                DialogBody.plainMessage(grid(size, cells), size.gridWidth() + 16));
         return Dialog.create(builder -> builder.empty()
                 .base(base(body))
                 .type(DialogType.dialogList(RegistrySet.valueSet(RegistryKey.DIALOG, List.<Dialog>of())).build()));
@@ -127,46 +125,28 @@ public final class KeyboardView {
         return out.build();
     }
 
-    static Component grid(Size size, ChordStyle style, Cell[] cells) {
+    static Component grid(Size size, Cell[] cells) {
         int d = size.diameter();
         int px = size.pitchX();
         int lead = (px - d) / 2;
         String blankCell = KeyboardFont.space(px);
-        int lines = size.rowLines(style);
+        int lines = size.lines();
         TextComponent.Builder out = root();
         for (int row = 0; row < KeyboardFont.ROWS; row++) {
             for (int line = 0; line < lines; line++) {
                 if (row > 0 || line > 0) {
                     out.append(Component.newline());
                 }
-                // With marks or tabs the bottom line of each row, under the circles, plays the chord.
-                boolean chordLine = style != ChordStyle.ROW && line == lines - 1;
+                // The bottom line of each row, under the circles, shows the chord marks and plays the chord.
+                boolean chordLine = line == lines - 1;
                 for (int column = 0; column < KeyboardFont.COLUMNS; column++) {
                     int index = row * KeyboardFont.COLUMNS + column;
                     if (chordLine) {
-                        String strip = style == ChordStyle.TABS
-                                ? centred(size, size.tabChar(cells[index].chord()), size.tabWidth())
-                                : centred(size, size.markChar(cells[index].chord()), MARK_WIDTH);
-                        out.append(chordCell(strip, index, column));
+                        out.append(chordCell(centred(size, size.markChar(cells[index].chord()), MARK_WIDTH), index, column));
                     } else {
                         String text = line == 0 ? noteCell(size, column, cells[index], lead) : blankCell;
                         out.append(Component.text(text).clickEvent(ClickEvent.custom(noteKey(index), "0b")));
                     }
-                }
-            }
-        }
-        if (style == ChordStyle.ROW) {
-            // A spacer line, then one row of named chord buttons: the middle octave's chords.
-            out.append(Component.newline());
-            out.append(Component.text(KeyboardFont.space(size.gridWidth())));
-            for (int line = 0; line < CHORD_ROW_LINES; line++) {
-                out.append(Component.newline());
-                for (int column = 0; column < KeyboardFont.COLUMNS; column++) {
-                    int index = KeyboardFont.COLUMNS + column;
-                    String text = line == 0
-                            ? centred(size, size.rowButtonChar(column, cells[index].chord()), size.rowButtonWidth())
-                            : blankCell;
-                    out.append(chordCell(text, index, column));
                 }
             }
         }

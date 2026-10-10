@@ -45,12 +45,8 @@ class KeyboardViewTest {
         for (char c : text.toCharArray()) {
             if (c >= 0xE400) {
                 total += KeyboardFontTest.advanceOf(String.valueOf(c));
-            } else if ((c & 0xFF) >= 0x40) {
-                total += KeyboardFont.advance(size.rowButtonWidth());
-            } else if ((c & 0xFF) >= 0x32) {
-                total += KeyboardFont.advance(12); // three-dot chord mark
             } else if ((c & 0xFF) >= 0x30) {
-                total += KeyboardFont.advance(size.tabWidth());
+                total += KeyboardFont.advance(12); // three-dot chord mark
             } else if ((c & 0xFF) >= 0x20) {
                 total += KeyboardFont.advance(size.ring((c & 0xFF) - 0x20));
             } else {
@@ -82,81 +78,49 @@ class KeyboardViewTest {
         cells[10] = new Cell(true, 0);
         cells[20] = new Cell(false, 2);
         cells[13] = new Cell(false, 7); // unknown ring frames draw no ring
-        for (ChordStyle style : ChordStyle.values()) {
-            for (Size size : Size.values()) {
-                Component grid = KeyboardView.grid(size, style, cells);
-                assertEquals(ShadowColor.none(), grid.style().shadowColor());
-                assertEquals(KeyboardFont.FONT, grid.style().font());
-                List<List<TextComponent>> lines = lines(grid);
-                int rowLines = size.rowLines(style);
-                int gridLines = KeyboardFont.ROWS * rowLines;
-                // The chord row adds a spacer line and two lines of chord buttons.
-                assertEquals(gridLines + (style == ChordStyle.ROW ? 3 : 0), lines.size());
-                for (int line = 0; line < lines.size(); line++) {
-                    List<TextComponent> segments = lines.get(line);
-                    if (line == gridLines) {
-                        assertEquals(1, segments.size()); // the spacer above the chord row
-                        assertEquals(size.gridWidth(), advance(segments.getFirst().content(), size));
-                        assertEquals(null, segments.getFirst().clickEvent());
-                        continue;
-                    }
-                    assertEquals(KeyboardFont.COLUMNS, segments.size());
-                    boolean chordRow = line > gridLines;
-                    int row = chordRow ? 1 : line / rowLines;
-                    boolean chordLine = chordRow || (style != ChordStyle.ROW && line % rowLines == rowLines - 1);
-                    for (int column = 0; column < KeyboardFont.COLUMNS; column++) {
-                        TextComponent segment = segments.get(column);
-                        // Every cell segment fills exactly one column, so lines stay aligned.
-                        assertEquals(size.pitchX(), advance(segment.content(), size),
-                                style + " " + size + " line " + line + " column " + column);
-                        ClickEvent click = segment.clickEvent();
-                        assertNotNull(click);
-                        assertEquals(ClickEvent.Action.CUSTOM, click.action());
-                        ClickEvent.Payload.Custom payload = (ClickEvent.Payload.Custom) click.payload();
-                        int index = row * KeyboardFont.COLUMNS + column;
-                        assertEquals(chordLine ? KeyboardView.chordKey(index) : KeyboardView.noteKey(index), payload.key());
-                        assertEquals(chordLine, segment.hoverEvent() != null);
-                    }
+        for (Size size : Size.values()) {
+            Component grid = KeyboardView.grid(size, cells);
+            assertEquals(ShadowColor.none(), grid.style().shadowColor());
+            assertEquals(KeyboardFont.FONT, grid.style().font());
+            List<List<TextComponent>> lines = lines(grid);
+            assertEquals(KeyboardFont.ROWS * size.lines(), lines.size());
+            for (int line = 0; line < lines.size(); line++) {
+                List<TextComponent> segments = lines.get(line);
+                assertEquals(KeyboardFont.COLUMNS, segments.size());
+                int row = line / size.lines();
+                // The bottom line of each row, under the circles, holds the chord marks.
+                boolean chordLine = line % size.lines() == size.lines() - 1;
+                for (int column = 0; column < KeyboardFont.COLUMNS; column++) {
+                    TextComponent segment = segments.get(column);
+                    // Every cell segment fills exactly one column, so lines stay aligned.
+                    assertEquals(size.pitchX(), advance(segment.content(), size), size + " line " + line + " column " + column);
+                    ClickEvent click = segment.clickEvent();
+                    assertNotNull(click);
+                    assertEquals(ClickEvent.Action.CUSTOM, click.action());
+                    ClickEvent.Payload.Custom payload = (ClickEvent.Payload.Custom) click.payload();
+                    int index = row * KeyboardFont.COLUMNS + column;
+                    assertEquals(chordLine ? KeyboardView.chordKey(index) : KeyboardView.noteKey(index), payload.key());
+                    assertEquals(chordLine, segment.hoverEvent() != null);
                 }
             }
         }
-        String first = lines(KeyboardView.grid(Size.MEDIUM, ChordStyle.MARKS, cells)).getFirst().get(3).content();
+        String first = lines(KeyboardView.grid(Size.MEDIUM, cells)).getFirst().get(3).content();
         assertTrue(first.indexOf(Size.MEDIUM.note(3, true)) >= 0);
-        String ringed = lines(KeyboardView.grid(Size.MEDIUM, ChordStyle.MARKS, cells)).get(Size.MEDIUM.lines()).get(3).content();
+        String ringed = lines(KeyboardView.grid(Size.MEDIUM, cells)).get(Size.MEDIUM.lines()).get(3).content();
         assertTrue(ringed.indexOf(Size.MEDIUM.ringChar(0)) >= 0);
-        String unknown = lines(KeyboardView.grid(Size.MEDIUM, ChordStyle.MARKS, cells)).get(Size.MEDIUM.lines()).get(6).content();
+        String unknown = lines(KeyboardView.grid(Size.MEDIUM, cells)).get(Size.MEDIUM.lines()).get(6).content();
         assertEquals(-1, unknown.indexOf(Size.MEDIUM.ringChar(0)));
     }
 
     @Test
-    void eachChordStyleDrawsItsOwnButtonsAndNamesTheChord() {
+    void chordMarksSitUnderTheCirclesAndNameTheChord() {
         Cell[] cells = idle();
         cells[4] = new Cell(false, -1, true);
-        cells[11] = new Cell(false, -1, true);
-        int tabLine = Size.SMALL.rowLines(ChordStyle.TABS) - 1;
-        List<List<TextComponent>> tabs = lines(KeyboardView.grid(Size.SMALL, ChordStyle.TABS, cells));
-        assertEquals(Component.text("G chord"), tabs.get(tabLine).get(4).hoverEvent().value());
-        assertTrue(tabs.get(tabLine).get(4).content().indexOf(Size.SMALL.tabChar(true)) >= 0);
-        assertTrue(tabs.get(tabLine).get(5).content().indexOf(Size.SMALL.tabChar(false)) >= 0);
-
-        int markLine = Size.SMALL.rowLines(ChordStyle.MARKS) - 1;
-        List<List<TextComponent>> marks = lines(KeyboardView.grid(Size.SMALL, ChordStyle.MARKS, cells));
-        assertTrue(marks.get(markLine).get(4).content().indexOf(Size.SMALL.markChar(true)) >= 0);
-        assertTrue(marks.get(markLine).get(5).content().indexOf(Size.SMALL.markChar(false)) >= 0);
-
-        List<List<TextComponent>> row = lines(KeyboardView.grid(Size.SMALL, ChordStyle.ROW, cells));
-        int buttons = KeyboardFont.ROWS * Size.SMALL.lines() + 1;
-        assertTrue(row.get(buttons).get(4).content().indexOf(Size.SMALL.rowButtonChar(4, true)) >= 0);
-        assertTrue(row.get(buttons).get(0).content().indexOf(Size.SMALL.rowButtonChar(0, false)) >= 0);
-        assertEquals(Component.text("C chord"), row.get(buttons).get(0).hoverEvent().value());
-    }
-
-    @Test
-    void chordStylesAreFoundByName() {
-        assertEquals(ChordStyle.MARKS, ChordStyle.byName("marks", ChordStyle.ROW));
-        assertEquals(ChordStyle.ROW, ChordStyle.byName("nope", ChordStyle.ROW));
-        assertEquals(ChordStyle.TABS, ChordStyle.byName(null, ChordStyle.TABS));
-        assertEquals("Chord row", ChordStyle.ROW.label());
+        int markLine = Size.SMALL.lines() - 1;
+        List<List<TextComponent>> lines = lines(KeyboardView.grid(Size.SMALL, cells));
+        assertEquals(Component.text("G chord"), lines.get(markLine).get(4).hoverEvent().value());
+        assertTrue(lines.get(markLine).get(4).content().indexOf(Size.SMALL.markChar(true)) >= 0);
+        assertTrue(lines.get(markLine).get(5).content().indexOf(Size.SMALL.markChar(false)) >= 0);
     }
 
     @Test
@@ -179,7 +143,7 @@ class KeyboardViewTest {
     @Test
     void buildsADialog() {
         try (DialogStubs stubs = new DialogStubs()) {
-            assertNotNull(KeyboardView.dialog(Size.LARGE, ChordStyle.ROW, idle()));
+            assertNotNull(KeyboardView.dialog(Size.LARGE, idle()));
             assertEquals(1, stubs.created.size());
         }
     }

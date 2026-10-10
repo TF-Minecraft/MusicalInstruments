@@ -58,7 +58,6 @@ class KeyboardSettingsTest {
         assertTrue(settings.openOnRightClick());
         assertEquals(Size.MEDIUM, settings.defaultSize());
         assertTrue(settings.defaultRings());
-        assertEquals(ChordStyle.ROW, settings.defaultChordStyle());
         assertEquals(2.0f, settings.highPitch());
         assertEquals(0.5f, settings.lowPitch());
         assertTrue(settings.particles());
@@ -76,7 +75,6 @@ class KeyboardSettingsTest {
                 open-on-right-click: false
                 default-size: large
                 ring-effect: false
-                chord-buttons: marks
                 high-row-pitch: 5
                 low-row-pitch: 0.1
                 note-particles: false
@@ -89,7 +87,6 @@ class KeyboardSettingsTest {
         assertFalse(settings.openOnRightClick());
         assertEquals(Size.LARGE, settings.defaultSize());
         assertFalse(settings.defaultRings());
-        assertEquals(ChordStyle.MARKS, settings.defaultChordStyle());
         assertEquals(2.0f, settings.highPitch());
         assertEquals(0.5f, settings.lowPitch());
         assertFalse(settings.particles());

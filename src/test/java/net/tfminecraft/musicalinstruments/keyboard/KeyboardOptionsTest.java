@@ -38,24 +38,19 @@ class KeyboardOptionsTest {
 
     @Test
     void startsFromTheServerDefaults() {
-        assertEquals(new Prefs(Size.MEDIUM, true, ChordStyle.ROW), options.prefs(player));
+        assertEquals(new Prefs(Size.MEDIUM, true), options.prefs(player));
     }
 
     @Test
     void savesOnlyTheValuesTheDialogSent() {
-        options.save(player, new Choice("large", false, null));
-        assertEquals(new Prefs(Size.LARGE, false, ChordStyle.ROW), options.prefs(player));
+        options.save(player, new Choice("large", false));
+        assertEquals(new Prefs(Size.LARGE, false), options.prefs(player));
 
-        options.save(player, new Choice(null, null, null));
-        assertEquals(new Prefs(Size.LARGE, false, ChordStyle.ROW), options.prefs(player));
+        options.save(player, new Choice(null, null));
+        assertEquals(new Prefs(Size.LARGE, false), options.prefs(player));
 
-        options.save(player, new Choice("tiny", true, null));
-        assertEquals(new Prefs(Size.MEDIUM, true, ChordStyle.ROW), options.prefs(player));
-
-        options.save(player, new Choice(null, null, "marks"));
-        assertEquals(ChordStyle.MARKS, options.prefs(player).chordStyle());
-        options.save(player, new Choice(null, null, "bogus"));
-        assertEquals(ChordStyle.ROW, options.prefs(player).chordStyle());
+        options.save(player, new Choice("tiny", true));
+        assertEquals(new Prefs(Size.MEDIUM, true), options.prefs(player));
     }
 
     @Test
@@ -64,15 +59,14 @@ class KeyboardOptionsTest {
         DialogResponseView view = mock(DialogResponseView.class);
         when(view.getText("size")).thenReturn("SMALL");
         when(view.getBoolean("rings")).thenReturn(true);
-        when(view.getText("chords")).thenReturn("TABS");
-        assertEquals(new Choice("SMALL", true, "TABS"), Choice.read(view));
+        assertEquals(new Choice("SMALL", true), Choice.read(view));
     }
 
     @Test
     void buildsTheOptionsDialog() {
         try (DialogStubs stubs = new DialogStubs()) {
             assertNotNull(options.dialog(player, "lute"));
-            options.save(player, new Choice("small", false, null));
+            options.save(player, new Choice("small", false));
             assertNotNull(options.dialog(player, "celtic_harp"));
             assertEquals(2, stubs.created.size());
         }

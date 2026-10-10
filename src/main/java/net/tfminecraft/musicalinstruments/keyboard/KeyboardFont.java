@@ -21,28 +21,23 @@ public final class KeyboardFont {
 
     /** Keyboard sizes offered in the options menu. */
     public enum Size {
-        SMALL("Small", 0, 32, 44, 5, 26, 36, new int[]{36, 40, 42}),
-        MEDIUM("Medium", 1, 40, 54, 6, 30, 46, new int[]{46, 50, 52}),
-        LARGE("Large (GUI scale 3 or lower)", 2, 52, 72, 7, 36, 60, new int[]{58, 64, 70});
+        SMALL("Small", 0, 32, 44, 5, new int[]{36, 40, 42}),
+        MEDIUM("Medium", 1, 40, 54, 6, new int[]{46, 50, 52}),
+        LARGE("Large (GUI scale 3 or lower)", 2, 52, 72, 7, new int[]{58, 64, 70});
 
         private final String label;
         private final int index;
         private final int diameter;
         private final int pitchX;
         private final int lines;
-        private final int tabWidth;
-        private final int rowButtonWidth;
         private final int[] rings;
 
-        Size(String label, int index, int diameter, int pitchX, int lines, int tabWidth, int rowButtonWidth,
-             int[] rings) {
+        Size(String label, int index, int diameter, int pitchX, int lines, int[] rings) {
             this.label = label;
             this.index = index;
             this.diameter = diameter;
             this.pitchX = pitchX;
             this.lines = lines;
-            this.tabWidth = tabWidth;
-            this.rowButtonWidth = rowButtonWidth;
             this.rings = rings;
         }
 
@@ -58,37 +53,13 @@ public final class KeyboardFont {
             return this.pitchX;
         }
 
-        /** Text lines per keyboard row (CHORD tabs add one more, see {@link #rowLines}). */
+        /** Text lines per keyboard row; the last one, under the circles, holds the chord marks. */
         public int lines() {
             return this.lines;
         }
 
-        /** Text lines per keyboard row for a chord style; the last one is the chord strip. */
-        public int rowLines(ChordStyle style) {
-            return style == ChordStyle.TABS ? this.lines + 1 : this.lines;
-        }
-
-        /** Width of a button in the chord row. */
-        public int rowButtonWidth() {
-            return this.rowButtonWidth;
-        }
-
         /** Three small dots marking the chord strip under a circle. */
         public char markChar(boolean lit) {
-            return (char) (0xE000 + this.index * 0x100 + 0x32 + (lit ? 1 : 0));
-        }
-
-        /** Named chord button (C, Dm, Em, F, G, Am, B°) for the chord row. */
-        public char rowButtonChar(int column, boolean lit) {
-            return (char) (0xE000 + this.index * 0x100 + (lit ? 0x50 : 0x40) + column);
-        }
-
-        /** Width of the gold CHORD tab under each circle. */
-        public int tabWidth() {
-            return this.tabWidth;
-        }
-
-        public char tabChar(boolean lit) {
             return (char) (0xE000 + this.index * 0x100 + 0x30 + (lit ? 1 : 0));
         }
 
