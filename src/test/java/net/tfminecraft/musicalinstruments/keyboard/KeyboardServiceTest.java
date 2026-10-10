@@ -277,7 +277,7 @@ class KeyboardServiceTest {
 
     @Test
     void particlesCanBeTurnedOff() {
-        KeyboardSettings quiet = new KeyboardSettings(true, true, Size.SMALL, true, 2f, 0.5f, false, Map.of());
+        KeyboardSettings quiet = new KeyboardSettings(true, true, Size.SMALL, true, 2f, 0.5f, false, Map.of(), Map.of());
         service = new KeyboardService(plugin, manager, quiet, time::get);
         service.open(player, "lute", false);
         click(0);
@@ -482,12 +482,13 @@ class KeyboardServiceTest {
                 () -> service.onInventory(inventoryEvent(player)));
         for (Runnable sign : signs) {
             service.open(player, "lute", false);
-            assertTrue(service.isOpen(player));
+            server.getScheduler().performTicks(KeyboardService.OPEN_GRACE_TICKS);
             sign.run();
             assertFalse(service.isOpen(player));
         }
 
         service.open(player, "lute", false);
+        server.getScheduler().performTicks(KeyboardService.OPEN_GRACE_TICKS);
         service.onMove(new PlayerMoveEvent(player, here, stepped)); // walking alone can be knockback
         service.onInventory(inventoryEvent(mock(HumanEntity.class)));
         assertTrue(service.isOpen(player));
@@ -497,6 +498,46 @@ class KeyboardServiceTest {
         service.onQuit(quit);
         assertFalse(service.isOpen(player));
         service.onHeld(new PlayerItemHeldEvent(player, 1, 2)); // no session: nothing to close
+    }
+
+    @Test
+    void theViewIsComparedWithTheOneTheKeyboardWasPlayedWith() {
+        Location here = player.getLocation();
+        Location nudged = here.clone();
+        nudged.setYaw(here.getYaw() + 5);
+        Location nudgedAndStepped = nudged.clone().add(0.1, 0, 0);
+        Location wrapped = nudged.clone();
+        wrapped.setYaw(nudged.getYaw() + 360);
+
+        // Mouse movement sent before the screen appeared settles the view.
+        service.open(player, "lute", false);
+        service.onMove(new PlayerMoveEvent(player, here, nudged));
+        server.getScheduler().performTicks(KeyboardService.OPEN_GRACE_TICKS);
+        // Paper's event starts where the last fired one ended: still the old view, yet nothing turned.
+        service.onMove(new PlayerMoveEvent(player, here, nudgedAndStepped));
+        service.onMove(new PlayerMoveEvent(player, here, wrapped));
+        assertTrue(service.isOpen(player));
+        Location turned = nudged.clone();
+        turned.setYaw(nudged.getYaw() + KeyboardService.LOOK_TOLERANCE * 2);
+        service.onMove(new PlayerMoveEvent(player, nudged, turned));
+        assertFalse(service.isOpen(player));
+        service.onMove(new PlayerMoveEvent(player, turned, here)); // already closed
+
+        // Playing a note takes the current view.
+        player.teleport(turned);
+        click(0);
+        service.onMove(new PlayerMoveEvent(player, here, turned));
+        assertTrue(service.isOpen(player));
+        PlayerMoveEvent idle = new PlayerMoveEvent(server.addPlayer(), here, turned);
+        service.onMove(idle); // no keyboard
+    }
+
+    @Test
+    void yawDifferenceWraps() {
+        assertEquals(10f, KeyboardService.yawDifference(355f, 5f));
+        assertEquals(10f, KeyboardService.yawDifference(-365f, 5f));
+        assertEquals(0f, KeyboardService.yawDifference(10f, 370f));
+        assertEquals(180f, KeyboardService.yawDifference(0f, 180f));
     }
 
     private PlayerDropItemEvent dropEvent() {
@@ -536,6 +577,13 @@ class KeyboardServiceTest {
         stone.setType(Material.STONE);
         interact(Action.RIGHT_CLICK_BLOCK, stone, EquipmentSlot.HAND);
         assertEquals(2, sent());
+        // The empty off hand's click on the same block follows; it must not drop the no-blur marker.
+        PlayerMock spied = spy(player);
+        service.onInteract(new PlayerInteractEvent(spied, Action.RIGHT_CLICK_BLOCK, null, stone, BlockFace.UP,
+                EquipmentSlot.OFF_HAND));
+        service.onSwing(new PlayerAnimationEvent(spied, org.bukkit.event.player.PlayerAnimationType.ARM_SWING));
+        assertTrue(service.isOpen(spied));
+        verify(spied, never()).clearTitle();
     }
 
     @Test
@@ -573,7 +621,7 @@ class KeyboardServiceTest {
 
     @Test
     void rightClickOpeningCanBeTurnedOffOrDenied() {
-        KeyboardSettings off = new KeyboardSettings(true, false, Size.SMALL, true, 2f, 0.5f, true, Map.of());
+        KeyboardSettings off = new KeyboardSettings(true, false, Size.SMALL, true, 2f, 0.5f, true, Map.of(), Map.of());
         service = new KeyboardService(plugin, manager, off, time::get);
         interact(Action.RIGHT_CLICK_AIR, null, EquipmentSlot.HAND);
         assertEquals(0, sent());
@@ -595,6 +643,7 @@ class KeyboardServiceTest {
         service.open(player, "lute", true);
         service.open(idle, "lute", true);
         service.open(gone, "lute", true);
+        server.getScheduler().performTicks(KeyboardService.OPEN_GRACE_TICKS);
         service.onHeld(new PlayerItemHeldEvent(idle, 0, 1));
         gone.disconnect();
 

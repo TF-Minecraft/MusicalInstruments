@@ -44,12 +44,17 @@ public final class NoteMap {
     }
 
     /**
-     * The chord on a note, in that note's octave. Instruments with recorded chords (their
-     * Shift + note hotbar sounds) play the recording, pitched for the top and bottom rows like
-     * single notes; the others play root, third and fifth together from their own notes.
+     * The chord on a note, in that note's octave. keyboard.yml chords give every cell its own
+     * chord sound. Otherwise instruments with recorded chords (their Shift + note hotbar sounds)
+     * play the recording, pitched for the top and bottom rows like single notes; the others play
+     * root, third and fifth together from their own notes.
      */
     public static List<Note> chord(InstrumentManager manager, KeyboardSettings settings, String instrument,
                                    int row, int column) {
+        String[][] chords = settings.chordsFor(instrument);
+        if (chords != null) {
+            return List.of(new Note(chords[row][column], KeyboardSettings.clampPitch(manager.getPitch(instrument))));
+        }
         String sneak = manager.getSoundKey(instrument, column + 1, true);
         if (sneak != null && sneak.contains("chord")) {
             float pitch = KeyboardSettings.clampPitch(manager.getPitch(instrument));

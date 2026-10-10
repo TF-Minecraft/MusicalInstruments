@@ -65,7 +65,12 @@ class KeyboardSettingsTest {
         assertEquals("tfmc_instruments:celtic_harp.c6", harp[0][0]);
         assertEquals("tfmc_instruments:celtic_harp.f5", harp[1][3]);
         assertEquals("tfmc_instruments:celtic_harp.b4", harp[2][6]);
-        assertNull(settings.rowsFor("lute"));
+        assertNull(settings.rowsFor("bongo"));
+        String[][] lute = settings.chordsFor("lute");
+        assertEquals("tfmc_instruments:lute.chord_c5", lute[0][0]);
+        assertEquals("tfmc_instruments:lute.chord_f4", lute[1][3]);
+        assertEquals("tfmc_instruments:lute.chord_b3", lute[2][6]);
+        assertNull(settings.chordsFor("flute"));
     }
 
     @Test
@@ -91,6 +96,7 @@ class KeyboardSettingsTest {
         assertEquals(0.5f, settings.lowPitch());
         assertFalse(settings.particles());
         assertTrue(settings.rows().isEmpty());
+        assertTrue(settings.chords().isEmpty());
     }
 
     @Test
@@ -107,22 +113,29 @@ class KeyboardSettingsTest {
         yaml.set("good.rows", List.of(SEVEN, SEVEN, SEVEN));
         yaml.set("norows.volume", 1);
         yaml.set("tworows.rows", List.of(SEVEN, SEVEN));
+        yaml.set("scalar.rows", 5);
         yaml.set("notalist.rows", List.of(SEVEN, "oops", SEVEN));
         yaml.set("short.rows", List.of(SEVEN, SEVEN, List.of("a", "b")));
         yaml.set("number.rows", List.of(SEVEN, SEVEN, List.of("a", "b", "c", "d", "e", "f", 7)));
         yaml.set("blank.rows", List.of(SEVEN, List.of("a", "b", "c", " ", "e", "f", "g"), SEVEN));
 
-        var rows = KeyboardSettings.loadRows(yaml, logger);
+        yaml.set("good.chords", List.of(SEVEN, SEVEN));
+
+        var rows = KeyboardSettings.loadGrids(yaml, "rows", logger);
 
         assertEquals(1, rows.size());
         assertArrayEquals(SEVEN.toArray(), rows.get("good")[2]);
-        verify(logger).warning(contains("instruments.norows.rows needs 3 rows"));
+        // Instruments without the key are skipped quietly.
+        verify(logger, never()).warning(contains("instruments.norows"));
         verify(logger).warning(contains("instruments.tworows.rows needs 3 rows"));
+        verify(logger).warning(contains("instruments.scalar.rows needs 3 rows"));
         verify(logger).warning(contains("instruments.notalist.rows needs 7 sound names"));
         verify(logger).warning(contains("instruments.short.rows needs 7 sound names"));
         verify(logger).warning(contains("instruments.number.rows needs 7 sound names"));
         verify(logger).warning(contains("instruments.blank.rows needs 7 sound names"));
-        assertTrue(KeyboardSettings.loadRows(null, logger).isEmpty());
+        assertTrue(KeyboardSettings.loadGrids(yaml, "chords", logger).isEmpty());
+        verify(logger).warning(contains("instruments.good.chords needs 3 rows"));
+        assertTrue(KeyboardSettings.loadGrids(null, "rows", logger).isEmpty());
     }
 
     @Test

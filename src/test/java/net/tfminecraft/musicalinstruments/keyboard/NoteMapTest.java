@@ -20,7 +20,11 @@ class NoteMapTest {
     private KeyboardSettings settings;
 
     static KeyboardSettings settings(Map<String, String[][]> rows) {
-        return new KeyboardSettings(true, true, Size.MEDIUM, true, 2.0f, 0.5f, true, rows);
+        return settings(rows, Map.of());
+    }
+
+    static KeyboardSettings settings(Map<String, String[][]> rows, Map<String, String[][]> chords) {
+        return new KeyboardSettings(true, true, Size.MEDIUM, true, 2.0f, 0.5f, true, rows, chords);
     }
 
     private static String[][] harpRows() {
@@ -92,6 +96,14 @@ class NoteMapTest {
         // Also for instruments with their own sound per cell.
         KeyboardSettings withRows = settings(Map.of("harp", harpRows()));
         assertEquals(List.of(new Note("harp_1c_chord", 1.0f)), NoteMap.chord(manager, withRows, "harp", 1, 0));
+    }
+
+    @Test
+    void configuredChordsGiveEveryCellItsOwnChord() {
+        KeyboardSettings withChords = settings(Map.of("harp", harpRows()), Map.of("harp", harpRows(), "drum", harpRows()));
+        assertEquals(List.of(new Note("harp.04", 1.0f)), NoteMap.chord(manager, withChords, "harp", 0, 4));
+        assertEquals(List.of(new Note("harp.20", 1.0f)), NoteMap.chord(manager, withChords, "harp", 2, 0));
+        assertEquals(List.of(new Note("harp.13", 1.5f)), NoteMap.chord(manager, withChords, "drum", 1, 3));
     }
 
     @Test

@@ -9,15 +9,23 @@ circles, rings and options button with the `tfmc_instruments:keyboard` font.
   `plugins/ItemsAdder/contents/tfmc_instruments/resourcepack/`, followed by `iazip`.
 - Font glyph images must stay at most 256 px wide/high (client font atlas pages are 256 px).
 
-## Celtic harp notes
+## Instrument notes
 
-The harp has its own sound for every keyboard cell (`keyboard.yml` -> `instruments.celtic_harp.rows`):
-C4-B6 as `tfmc_instruments:celtic_harp.<note><octave>`. `tools/make_harp.py` builds them from the eight
-recorded singles (C5-C6, from the server pack's `instruments/celtic_harp/`): the middle row is the
-recordings, C6 is the recorded high C, and the other notes are shifted one octave with ffmpeg's
-rubberband filter (keeps the pluck's attack and length). `tools/pitch.py` checks the result.
-The .ogg files are not committed (they come from the server pack's recordings): generate them
-with `python tools/make_harp.py <folder with the celtic_harp_*_single.ogg files>` before copying `assets/`.
+Every instrument has its own sound for every keyboard cell (`keyboard.yml` -> `instruments.<id>.rows`),
+three octaves C-B as `tfmc_instruments:<instrument>.<note><octave>`. `tools/make_notes.py` builds them
+from the recorded singles in the server pack's `assets/minecraft/sounds/instruments/<instrument>/`:
+
+- one recorded octave (accordion, celtic harp, dulcimer, kalimba, lute, vielle; singles 1c-8c): the
+  middle row is the recordings, the top row's C is the recorded high C, the other notes are shifted
+  one octave with ffmpeg's rubberband filter (keeps the attack and length, loudness matched);
+- two recorded octaves (bagpipe, flute, trumpet; singles 1c-16c): middle and top rows are both
+  recordings, only the bottom row is shifted down.
+
+The octave of each instrument's first note is listed in `INSTRUMENTS` in the script (from
+`tools/pitch.py`; kalimba and trumpet fool its detector, check those spectra by hand). The script
+also rewrites the `instruments:` block of `src/main/resources/keyboard.yml`. The .ogg files are not
+committed (they come from the server pack's recordings): run
+`python tools/make_notes.py <pack>/assets/minecraft/sounds/instruments` before copying `assets/`.
 
 ## Focus outline
 

@@ -52,6 +52,13 @@ public final class KeyboardService implements Listener {
     static final long FRAME_MS = 50L;
     /** Keyboard actions (notes and menu buttons) allowed per player per rolling second. */
     static final int ACTIONS_PER_SECOND = 20;
+    /**
+     * Ticks after opening in which signs of play are taken to come from the opening click, and
+     * the player's view is still settling (mouse movement sent before the screen appeared).
+     */
+    static final int OPEN_GRACE_TICKS = 10;
+    /** Degrees the view may differ from the one the keyboard was played with before it counts as looking around. */
+    static final float LOOK_TOLERANCE = 1.0f;
     /** How often (ticks) the blur marker title is renewed while the keyboard is open. */
     static final int MARKER_REFRESH_TICKS = 40;
     /**
@@ -119,6 +126,7 @@ public final class KeyboardService implements Listener {
     public void open(Player player, String instrument, boolean free) {
         Session session = new Session(player.getUniqueId(), instrument, free);
         session.openedTick = Bukkit.getCurrentTick();
+        session.look(player.getLocation());
         this.sessions.put(player.getUniqueId(), session);
         this.send(player, session, this.clock.getAsLong());
     }
@@ -294,6 +302,7 @@ public final class KeyboardService implements Listener {
                 return;
             }
             session.open = true;
+            session.look(player.getLocation());
             if (chord >= 0) {
                 // Light the mark and every note of the chord so it reads as a chord.
                 session.chordStarted[index] = now;
@@ -383,22 +392,47 @@ public final class KeyboardService implements Listener {
         return type == InventoryType.CRAFTING || type == InventoryType.CREATIVE;
     }
 
-    /** Escape closes the dialog without telling the server, so stop animating on any sign of play. */
+    /**
+     * Escape closes the dialog without telling the server, so stop animating on any sign of play.
+     * Signs right after opening belong to the click that opened it (a right-click on a block also
+     * fires the off hand's block click and can swing the arm), so they are ignored.
+     */
     private void markClosed(Player player) {
         Session session = this.sessions.get(player.getUniqueId());
-        if (session != null) {
+        if (session != null && !settling(session)) {
             session.open = false;
             hideMarker(player, session);
         }
     }
 
+    private static boolean settling(Session session) {
+        return Bukkit.getCurrentTick() - session.openedTick < OPEN_GRACE_TICKS;
+    }
+
+    /**
+     * Turning means the screen is gone (the view cannot turn while it is open). The view is
+     * compared with the one the keyboard was last played with, not with the event's start:
+     * Paper only fires the event past a threshold, so its start can be several packets old.
+     */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onMove(PlayerMoveEvent event) {
-        Location from = event.getFrom();
+        Session session = this.sessions.get(event.getPlayer().getUniqueId());
+        if (session == null || !session.open) {
+            return;
+        }
         Location to = event.getTo();
-        if (Math.abs(from.getYaw() - to.getYaw()) > 0.01f || Math.abs(from.getPitch() - to.getPitch()) > 0.01f) {
+        if (settling(session)) {
+            session.look(to);
+        } else if (yawDifference(session.yaw, to.getYaw()) > LOOK_TOLERANCE
+                || Math.abs(session.pitch - to.getPitch()) > LOOK_TOLERANCE) {
             this.markClosed(event.getPlayer());
         }
+    }
+
+    /** Smallest angle between two yaws, in degrees (clients send unwrapped yaws such as 370). */
+    static float yawDifference(float a, float b) {
+        float d = Math.abs(a - b) % 360f;
+        return d > 180f ? 360f - d : d;
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -475,6 +509,9 @@ public final class KeyboardService implements Listener {
         int markerTick = Integer.MIN_VALUE / 2;
         boolean markerShown;
         String signature = "";
+        /** The view the keyboard was opened or last played with. */
+        float yaw;
+        float pitch;
 
         Session(UUID player, String instrument, boolean free) {
             this.player = player;
@@ -482,6 +519,11 @@ public final class KeyboardService implements Listener {
             this.free = free;
             Arrays.fill(this.started, Long.MIN_VALUE / 2);
             Arrays.fill(this.chordStarted, Long.MIN_VALUE / 2);
+        }
+
+        void look(Location location) {
+            this.yaw = location.getYaw();
+            this.pitch = location.getPitch();
         }
 
         boolean animating(long now) {
