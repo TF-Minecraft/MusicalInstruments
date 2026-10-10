@@ -141,13 +141,6 @@ class KeyboardViewTest {
     }
 
     @Test
-    void theTitleIsMinusTenPixelsWideToCentreTheWarningButton() {
-        TextComponent title = (TextComponent) KeyboardView.title();
-        assertEquals(-10, KeyboardFontTest.advanceOf(title.content()));
-        assertEquals(KeyboardFont.FONT, title.style().font());
-    }
-
-    @Test
     void buildsADialog() {
         try (DialogStubs stubs = new DialogStubs()) {
             assertNotNull(KeyboardView.dialog(Size.LARGE, idle()));

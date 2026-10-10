@@ -95,7 +95,7 @@ def cp(size_index, offset):
 
 BUTTON_CP = 0xE300
 BLUR_MARKER_CP = 0xE3F0
-BLUR_MARKER = (2, 3, 5, 255)  # must match MARKER in shaders/post/keyboard_blur.fsh
+BLUR_MARKER = (250, 251, 253, 255)  # must match MARKER in shaders/post/keyboard_blur.fsh
 SPACE_POS = 0xE400
 SPACE_NEG = 0xE410
 
@@ -238,13 +238,15 @@ def main():
     bitmap("options_button", button(), 20, 4, BUTTON_CP)
     # Blur marker, shown as a title while the keyboard is open. Titles are drawn 4x around the
     # screen centre (text at x = -width/2, y = -10). One opaque texel of a 4x4 cell with height 1
-    # is 1/4 title unit = exactly one GUI pixel. The texel in the last column/row, with advance 2
-    # (x = -1) and ascent -2 (top = -1), lands on GUI pixel (-1, -1) from the centre: the
-    # crosshair's centre pixel on even-sized screens, so it hides in the crosshair when no menu
-    # is open. assets/tfmc_instruments/shaders/post/keyboard_blur.fsh looks for it there.
+    # is 1/4 title unit = exactly one GUI pixel. The texel in the last column, top row, with
+    # advance 2 (x = -1) and ascent -3 (top = 0), lands on GUI pixel (-1, 0) from the centre.
+    # The crosshair is drawn around ((width - 15) / 2 + 7, (height - 15) / 2 + 7), so that pixel
+    # is on the crosshair: its centre for even widths and odd heights, its vertical line for even
+    # sizes. Near white, it reads as part of the crosshair when no menu is open.
+    # assets/tfmc_instruments/shaders/post/keyboard_blur.fsh looks for it there.
     marker = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
-    marker.putpixel((3, 3), BLUR_MARKER)
-    bitmap("blur_marker", marker, 1, -2, BLUR_MARKER_CP)
+    marker.putpixel((3, 0), BLUR_MARKER)
+    bitmap("blur_marker", marker, 1, -3, BLUR_MARKER_CP)
     for si, (sname, _, _, _, _) in enumerate(SIZES):
         offset = MARK_OFFSETS[sname]
         bitmap(f"{sname}_chord_mark", mark(offset, False), offset + 3, 7, cp(si, 0x30))

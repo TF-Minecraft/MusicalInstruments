@@ -27,7 +27,7 @@ in vec2 texCoord;
 
 out vec4 fragColor;
 
-const vec3 MARKER = vec3(2.0, 3.0, 5.0) / 255.0;
+const vec3 MARKER = vec3(250.0, 251.0, 253.0) / 255.0;
 
 bool isMarker(vec4 colour) {
     return all(lessThan(abs(colour.rgb - MARKER), vec3(0.75 / 255.0)));

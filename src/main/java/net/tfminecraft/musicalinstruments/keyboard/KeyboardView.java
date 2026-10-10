@@ -87,17 +87,8 @@ public final class KeyboardView {
                 .type(DialogType.dialogList(RegistrySet.valueSet(RegistryKey.DIALOG, List.<Dialog>of())).build()));
     }
 
-    /**
-     * The client lays out the title, 10 px of spacing and its 20 px "custom screen" warning
-     * button side by side and centres the group. A title of -10 px cancels the spacing, so the
-     * warning button sits exactly in the middle.
-     */
-    static Component title() {
-        return Component.text(KeyboardFont.space(-10)).font(KeyboardFont.FONT);
-    }
-
     private static DialogBase base(List<DialogBody> body) {
-        return DialogBase.builder(title())
+        return DialogBase.builder(Component.empty())
                 .canCloseWithEscape(true)
                 .pause(false)
                 .afterAction(DialogBase.DialogAfterAction.NONE)
