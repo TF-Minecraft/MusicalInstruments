@@ -4,6 +4,7 @@ import java.io.File;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 import net.tfminecraft.musicalinstruments.InstrumentPlugin;
 import net.tfminecraft.musicalinstruments.keyboard.KeyboardFont.Size;
 import org.bukkit.configuration.ConfigurationSection;
@@ -39,11 +40,11 @@ public record KeyboardSettings(
                 clampPitch(yaml.getDouble("high-row-pitch", 2.0)),
                 clampPitch(yaml.getDouble("low-row-pitch", 0.5)),
                 yaml.getBoolean("note-particles", true),
-                loadRows(yaml.getConfigurationSection("instruments")));
+                loadRows(yaml.getConfigurationSection("instruments"), plugin.getLogger()));
     }
 
     /** instruments.<id>.rows: three lists (top, middle, bottom) of seven sound keys each. */
-    static Map<String, String[][]> loadRows(ConfigurationSection section) {
+    static Map<String, String[][]> loadRows(ConfigurationSection section, Logger logger) {
         Map<String, String[][]> rows = new HashMap<>();
         if (section == null) {
             return rows;
@@ -51,6 +52,7 @@ public record KeyboardSettings(
         for (String instrument : section.getKeys(false)) {
             List<?> lists = section.getList(instrument + ".rows");
             if (lists == null || lists.size() != KeyboardFont.ROWS) {
+                logger.warning("keyboard.yml: instruments." + instrument + ".rows needs 3 rows; ignored.");
                 continue;
             }
             String[][] cells = new String[KeyboardFont.ROWS][KeyboardFont.COLUMNS];
@@ -60,12 +62,18 @@ public record KeyboardSettings(
                     valid = false;
                     continue;
                 }
-                for (int column = 0; column < KeyboardFont.COLUMNS; column++) {
-                    cells[row][column] = String.valueOf(sounds.get(column));
+                for (int column = 0; column < KeyboardFont.COLUMNS && valid; column++) {
+                    if (sounds.get(column) instanceof String sound && !sound.isBlank()) {
+                        cells[row][column] = sound;
+                    } else {
+                        valid = false;
+                    }
                 }
             }
             if (valid) {
                 rows.put(instrument, cells);
+            } else {
+                logger.warning("keyboard.yml: instruments." + instrument + ".rows needs 7 sound names per row; ignored.");
             }
         }
         return rows;

@@ -22,18 +22,19 @@ public final class NoteMap {
     public static Note resolve(InstrumentManager manager, KeyboardSettings settings, String instrument,
                                int row, int column, boolean chordMode) {
         int slot = column + 1;
-        String base = manager.getSoundKey(instrument, slot, false);
-        if (base == null) {
-            return null;
-        }
         String sneak = manager.getSoundKey(instrument, slot, true);
         boolean chords = sneak != null && sneak.contains("chord");
-        boolean octave = sneak != null && !chords;
         float pitch = KeyboardSettings.clampPitch(manager.getPitch(instrument));
+        // keyboard.yml rows define every cell; only chord mode still uses the hotbar chord sounds.
         String[][] rows = settings.rowsFor(instrument);
         if (rows != null && !(row == 1 && chordMode && chords)) {
             return new Note(rows[row][column], pitch);
         }
+        String base = manager.getSoundKey(instrument, slot, false);
+        if (base == null) {
+            return null;
+        }
+        boolean octave = sneak != null && !chords;
         return switch (row) {
             case 0 -> octave
                     ? new Note(sneak, pitch)

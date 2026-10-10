@@ -54,8 +54,8 @@ public class InstrumentPlugin extends JavaPlugin {
 
         // On-screen 7 x 3 keyboard (needs the tfmc_instruments:keyboard font in the resource pack).
         KeyboardSettings keyboardSettings = KeyboardSettings.load(this);
-        if (keyboardSettings.enabled()) {
-            keyboard = new KeyboardService(this, manager, keyboardSettings);
+        keyboard = keyboardSettings.enabled() ? new KeyboardService(this, manager, keyboardSettings) : null;
+        if (keyboard != null) {
             getServer().getPluginManager().registerEvents(keyboard, this);
             keyboard.start();
         }

@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.LongSupplier;
 import net.kyori.adventure.key.Key;
 import net.tfminecraft.musicalinstruments.InstrumentPlugin;
 import net.tfminecraft.musicalinstruments.events.InstrumentPlayEvent;
@@ -18,11 +19,13 @@ import org.bukkit.Material;
 import org.bukkit.Particle;
 import org.bukkit.SoundCategory;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.PlayerAnimationEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -31,29 +34,39 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.EquipmentSlot;
-import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitTask;
 
 /**
  * Runs the on-screen keyboard: opens it, plays notes for clicks and animates the circle
- * that was played by re-sending the dialog for a few ticks.
+ * that was played by re-sending the dialog for a few frames.
  */
 public final class KeyboardService implements Listener {
     /** Animation frames (lit, lit + ring 0, ring 1, ring 2), each shown for {@link #FRAME_MS}. */
-    private static final int FRAMES = 4;
-    private static final long FRAME_MS = 50L;
+    static final int FRAMES = 4;
+    static final long FRAME_MS = 50L;
+    /** Keyboard actions (notes and menu buttons) allowed per player per rolling second. */
+    static final int ACTIONS_PER_SECOND = 20;
     private final InstrumentPlugin plugin;
     private final InstrumentManager manager;
     private final KeyboardSettings settings;
     private final KeyboardOptions options;
     private final Map<UUID, Session> sessions = new HashMap<>();
+    /** Per player and independent of sessions, so reopening the keyboard does not reset it. */
+    private final Map<UUID, Limiter> limits = new HashMap<>();
+    /** Monotonic milliseconds. */
+    private final LongSupplier clock;
     private BukkitTask ticker;
 
     public KeyboardService(InstrumentPlugin plugin, InstrumentManager manager, KeyboardSettings settings) {
+        this(plugin, manager, settings, () -> System.nanoTime() / 1_000_000L);
+    }
+
+    KeyboardService(InstrumentPlugin plugin, InstrumentManager manager, KeyboardSettings settings, LongSupplier clock) {
         this.plugin = plugin;
         this.manager = manager;
         this.settings = settings;
         this.options = new KeyboardOptions(plugin, settings);
+        this.clock = clock;
     }
 
     public void start() {
@@ -73,10 +86,6 @@ public final class KeyboardService implements Listener {
         this.sessions.clear();
     }
 
-    public KeyboardSettings settings() {
-        return this.settings;
-    }
-
     /** The instrument a player can open the keyboard with, preferring the main hand. */
     public String heldInstrument(Player player) {
         String main = this.manager.getInstrument(player.getInventory().getItemInMainHand());
@@ -84,25 +93,21 @@ public final class KeyboardService implements Listener {
     }
 
     /**
-     * Opens the keyboard. {@code free} sessions (admins opening any instrument by name) skip
+     * Opens the keyboard. {@code free} sessions (staff opening any instrument by name) skip
      * the check that the instrument is still held.
      */
     public void open(Player player, String instrument, boolean free) {
         Session session = new Session(player.getUniqueId(), instrument, free);
         session.openedTick = Bukkit.getCurrentTick();
         this.sessions.put(player.getUniqueId(), session);
-        this.send(player, session);
+        this.send(player, session, this.clock.getAsLong());
     }
 
-    private void send(Player player, Session session) {
+    private void send(Player player, Session session, long now) {
         KeyboardOptions.Prefs prefs = this.options.prefs(player);
-        Cell[] cells = new Cell[KeyboardFont.CELLS];
-        StringBuilder signature = new StringBuilder(prefs.size().name());
-        for (int i = 0; i < cells.length; i++) {
-            cells[i] = this.cell(session, i, prefs.rings());
-            signature.append(cells[i].lit() ? 'L' : '-').append(cells[i].ring());
-        }
-        session.signature = signature.toString();
+        Cell[] cells = this.cells(session, prefs.rings(), now);
+        session.signature = signature(prefs.size(), cells);
+        session.showingFrame = !session.signature.equals(signature(prefs.size(), idle()));
         session.open = true;
         session.inOptions = false;
         session.dirty = false;
@@ -110,15 +115,38 @@ public final class KeyboardService implements Listener {
         player.showDialog(KeyboardView.dialog(prefs.size(), cells));
     }
 
-    private Cell cell(Session session, int index, boolean rings) {
-        long age = (System.currentTimeMillis() - session.started[index]) / FRAME_MS;
-        if (age < 0 || age >= FRAMES) {
+    private Cell[] cells(Session session, boolean rings, long now) {
+        Cell[] cells = new Cell[KeyboardFont.CELLS];
+        for (int i = 0; i < cells.length; i++) {
+            cells[i] = cell(now - session.started[i], rings);
+        }
+        return cells;
+    }
+
+    private static Cell[] idle() {
+        Cell[] cells = new Cell[KeyboardFont.CELLS];
+        Arrays.fill(cells, Cell.IDLE);
+        return cells;
+    }
+
+    static String signature(KeyboardFont.Size size, Cell[] cells) {
+        StringBuilder out = new StringBuilder(size.name());
+        for (Cell cell : cells) {
+            out.append(cell.lit() ? 'L' : '-').append(cell.ring());
+        }
+        return out.toString();
+    }
+
+    /** The frame for a circle played {@code elapsed} ms ago. With rings off it only flashes. */
+    static Cell cell(long elapsed, boolean rings) {
+        long frame = elapsed / FRAME_MS;
+        if (elapsed < 0 || frame >= FRAMES) {
             return Cell.IDLE;
         }
         if (!rings) {
-            return age < 2 ? new Cell(true, -1) : Cell.IDLE;
+            return frame < 2 ? new Cell(true, -1) : Cell.IDLE;
         }
-        return switch ((int) age) {
+        return switch ((int) frame) {
             case 0 -> new Cell(true, -1);
             case 1 -> new Cell(true, 0);
             case 2 -> new Cell(false, 1);
@@ -126,8 +154,8 @@ public final class KeyboardService implements Listener {
         };
     }
 
-    private void tick() {
-        long now = System.currentTimeMillis();
+    void tick() {
+        long now = this.clock.getAsLong();
         Iterator<Session> it = this.sessions.values().iterator();
         while (it.hasNext()) {
             Session session = it.next();
@@ -136,11 +164,12 @@ public final class KeyboardService implements Listener {
                 it.remove();
                 continue;
             }
+            // Keep going until an idle frame has gone out, even if the server stalled past the animation.
             if (!session.open || session.inOptions || player.isDead()
-                    || (!session.dirty && !session.animating(now))) {
+                    || (!session.dirty && !session.showingFrame && !session.animating(now))) {
                 continue;
             }
-            if (!this.canShow(player)) {
+            if (!canShow(player.getOpenInventory().getType())) {
                 session.open = false;
                 continue;
             }
@@ -148,13 +177,8 @@ public final class KeyboardService implements Listener {
                 continue;
             }
             KeyboardOptions.Prefs prefs = this.options.prefs(player);
-            StringBuilder signature = new StringBuilder(prefs.size().name());
-            for (int i = 0; i < KeyboardFont.CELLS; i++) {
-                Cell cell = this.cell(session, i, prefs.rings());
-                signature.append(cell.lit() ? 'L' : '-').append(cell.ring());
-            }
-            if (session.dirty || !signature.toString().equals(session.signature)) {
-                this.send(player, session);
+            if (session.dirty || !signature(prefs.size(), this.cells(session, prefs.rings(), now)).equals(session.signature)) {
+                this.send(player, session, now);
             }
         }
     }
@@ -199,7 +223,7 @@ public final class KeyboardService implements Listener {
         }
     }
 
-    private void handleClick(Player player, Key id, KeyboardOptions.Choice choice) {
+    void handleClick(Player player, Key id, KeyboardOptions.Choice choice) {
         if (!player.isOnline()) {
             return;
         }
@@ -209,15 +233,18 @@ public final class KeyboardService implements Listener {
             player.closeDialog();
             return;
         }
+        long now = this.clock.getAsLong();
+        if (!this.limits.computeIfAbsent(player.getUniqueId(), uuid -> new Limiter()).allow(now)) {
+            return;
+        }
         int index = KeyboardView.cellOf(id);
         if (index >= 0) {
+            if (session.inOptions || player.isDead() || !player.hasPermission("instruments.use")) {
+                return; // a stale click from a screen that is no longer the keyboard
+            }
             if (!session.free && !session.instrument.equals(this.heldInstrument(player))) {
                 this.sessions.remove(player.getUniqueId());
                 player.closeDialog();
-                return;
-            }
-            long now = System.currentTimeMillis();
-            if (!session.allowNote(now)) {
                 return;
             }
             session.open = true;
@@ -227,7 +254,7 @@ public final class KeyboardService implements Listener {
             if (session.lastSendTick == Bukkit.getCurrentTick()) {
                 session.dirty = true;
             } else {
-                this.send(player, session);
+                this.send(player, session, now);
             }
             return;
         }
@@ -241,7 +268,7 @@ public final class KeyboardService implements Listener {
                 this.options.save(player, choice);
             }
             Arrays.fill(session.started, Long.MIN_VALUE / 2);
-            this.send(player, session);
+            this.send(player, session, now);
             return;
         }
         if (id.equals(KeyboardOptions.CLOSE)) {
@@ -255,8 +282,8 @@ public final class KeyboardService implements Listener {
 
     // ------------------------------------------------------- opening/closing
 
-    // Runs after the studio's jukebox handler (HIGHEST) and leaves interactable blocks alone.
-    @EventHandler(priority = EventPriority.MONITOR)
+    // Interactable blocks (jukeboxes for the studio, doors, chests) are left alone entirely.
+    @EventHandler(priority = EventPriority.HIGHEST)
     public void onInteract(PlayerInteractEvent event) {
         Player player = event.getPlayer();
         this.markClosed(player);
@@ -267,16 +294,15 @@ public final class KeyboardService implements Listener {
         if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) {
             return;
         }
-        if (event.useItemInHand() == org.bukkit.event.Event.Result.DENY) {
+        if (event.useItemInHand() == Event.Result.DENY) {
             return;
         }
         if (action == Action.RIGHT_CLICK_BLOCK && (event.getClickedBlock() == null
                 || event.getClickedBlock().getType().isInteractable()
-                || event.useInteractedBlock() == org.bukkit.event.Event.Result.DENY)) {
+                || event.useInteractedBlock() == Event.Result.DENY)) {
             return;
         }
-        ItemStack item = event.getItem();
-        String instrument = this.manager.getInstrument(item);
+        String instrument = this.manager.getInstrument(event.getItem());
         if (instrument == null) {
             return;
         }
@@ -288,15 +314,13 @@ public final class KeyboardService implements Listener {
         if (current != null && current.openedTick == Bukkit.getCurrentTick()) {
             return; // both hands fired this tick
         }
-        event.setUseItemInHand(org.bukkit.event.Event.Result.DENY);
+        event.setUseItemInHand(Event.Result.DENY);
         this.open(player, instrument, false);
     }
 
     /** False while a container is open: a re-send would replace that screen. */
-    private boolean canShow(Player player) {
-        org.bukkit.event.inventory.InventoryType type = player.getOpenInventory().getType();
-        return type == org.bukkit.event.inventory.InventoryType.CRAFTING
-                || type == org.bukkit.event.inventory.InventoryType.CREATIVE;
+    static boolean canShow(InventoryType type) {
+        return type == InventoryType.CRAFTING || type == InventoryType.CREATIVE;
     }
 
     /** Escape closes the dialog without telling the server, so stop animating on any sign of play. */
@@ -346,20 +370,44 @@ public final class KeyboardService implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         this.sessions.remove(event.getPlayer().getUniqueId());
+        this.limits.remove(event.getPlayer().getUniqueId());
+    }
+
+    /** True while the player has a keyboard session that is believed to be on screen. */
+    boolean isOpen(Player player) {
+        Session session = this.sessions.get(player.getUniqueId());
+        return session != null && session.open;
+    }
+
+    /** Rolling one-second window of keyboard actions. */
+    static final class Limiter {
+        private final long[] recent = new long[ACTIONS_PER_SECOND];
+        private int next;
+
+        Limiter() {
+            Arrays.fill(this.recent, Long.MIN_VALUE / 2);
+        }
+
+        boolean allow(long now) {
+            if (now - this.recent[this.next] < 1000L) {
+                return false;
+            }
+            this.recent[this.next] = now;
+            this.next = (this.next + 1) % this.recent.length;
+            return true;
+        }
     }
 
     private static final class Session {
-        /** At most this many notes per rolling second. */
-        private static final int NOTES_PER_SECOND = 20;
         final UUID player;
         final String instrument;
         final boolean free;
         final long[] started = new long[KeyboardFont.CELLS];
-        private final long[] recent = new long[NOTES_PER_SECOND];
-        private int recentIndex;
         boolean open;
         boolean inOptions;
         boolean dirty;
+        /** The last frame sent was not the idle keyboard. */
+        boolean showingFrame;
         int lastSendTick = -1;
         int openedTick = -1;
         String signature = "";
@@ -369,21 +417,11 @@ public final class KeyboardService implements Listener {
             this.instrument = instrument;
             this.free = free;
             Arrays.fill(this.started, Long.MIN_VALUE / 2);
-            Arrays.fill(this.recent, Long.MIN_VALUE / 2);
-        }
-
-        boolean allowNote(long now) {
-            if (now - this.recent[this.recentIndex] < 1000L) {
-                return false;
-            }
-            this.recent[this.recentIndex] = now;
-            this.recentIndex = (this.recentIndex + 1) % this.recent.length;
-            return true;
         }
 
         boolean animating(long now) {
             for (long start : this.started) {
-                if (now - start <= FRAMES * FRAME_MS + FRAME_MS) {
+                if (now - start < FRAMES * FRAME_MS) {
                     return true;
                 }
             }

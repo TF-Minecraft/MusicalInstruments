@@ -180,8 +180,10 @@ def button():
 
 
 def main():
-    if os.path.isdir(OUT):
-        shutil.rmtree(OUT)
+    # Only replace this script's own output; sounds/ and sounds.json belong to tools/make_harp.py.
+    for generated in (os.path.join(OUT, "font"), os.path.join(OUT, "textures", "font", "keyboard")):
+        if os.path.isdir(generated):
+            shutil.rmtree(generated)
     os.makedirs(TEX)
     os.makedirs(os.path.join(OUT, "font"))
     providers = []

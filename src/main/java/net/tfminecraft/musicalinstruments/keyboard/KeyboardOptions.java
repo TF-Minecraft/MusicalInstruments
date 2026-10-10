@@ -80,7 +80,7 @@ public final class KeyboardOptions {
         }
         List<DialogInput> inputs = new ArrayList<>();
         inputs.add(DialogInput.singleOption("size", Component.text("Keyboard size"), sizes).width(200).build());
-        inputs.add(DialogInput.bool("rings", Component.text("Flash and ring on each note")).initial(prefs.rings()).build());
+        inputs.add(DialogInput.bool("rings", Component.text("Ring effect (off: flash only)")).initial(prefs.rings()).build());
         boolean chords = NoteMap.hasChords(manager, instrument);
         if (chords) {
             inputs.add(DialogInput.bool("chords", Component.text("Middle row plays chords")).initial(prefs.chords()).build());
