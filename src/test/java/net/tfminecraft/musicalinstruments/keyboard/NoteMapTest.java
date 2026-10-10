@@ -93,5 +93,8 @@ class NoteMapTest {
         assertEquals(new Note("harp.13", 1.5f), NoteMap.resolve(manager, withRows, "drum", 1, 3, true));
         // Chord mode still plays the hotbar chord on the middle row.
         assertEquals(new Note("lute_4f_chord", 1.0f), NoteMap.resolve(manager, withRows, "lute", 1, 3, true));
+        // Even when the instrument has a chord but no plain hotbar note for that column.
+        when(manager.getSoundKey("lute", 2, true)).thenReturn("lute_2d_chord");
+        assertEquals(new Note("lute_2d_chord", 1.0f), NoteMap.resolve(manager, withRows, "lute", 1, 1, true));
     }
 }

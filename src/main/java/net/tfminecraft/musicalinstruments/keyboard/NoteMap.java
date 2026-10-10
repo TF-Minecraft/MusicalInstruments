@@ -30,6 +30,9 @@ public final class NoteMap {
         if (rows != null && !(row == 1 && chordMode && chords)) {
             return new Note(rows[row][column], pitch);
         }
+        if (row == 1 && chordMode && chords) {
+            return new Note(sneak, pitch);
+        }
         String base = manager.getSoundKey(instrument, slot, false);
         if (base == null) {
             return null;
@@ -39,7 +42,7 @@ public final class NoteMap {
             case 0 -> octave
                     ? new Note(sneak, pitch)
                     : new Note(base, KeyboardSettings.clampPitch(pitch * settings.highPitch()));
-            case 1 -> chordMode && chords ? new Note(sneak, pitch) : new Note(base, pitch);
+            case 1 -> new Note(base, pitch);
             default -> new Note(base, KeyboardSettings.clampPitch(pitch * settings.lowPitch()));
         };
     }
