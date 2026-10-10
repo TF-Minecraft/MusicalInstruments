@@ -30,7 +30,7 @@ the server pack is active. Re-check the shader when the client version changes.
 ## No background blur behind the keyboard
 
 Only the keyboard is drawn without the menu blur. While it is open the server shows a title with
-a one-GUI-pixel dot in an exact near-white colour (`U+E3F0` in the keyboard font, RGB 250,251,253) on the crosshair; titles are drawn around
+a one-GUI-pixel dark blue dot (`U+E3F0` in the keyboard font, RGB 0,0,24; red and green exactly 0) on the crosshair; titles are drawn around
 the screen centre, so the dot covers the centre pixel. `assets/minecraft/post_effect/blur.json`
 runs `assets/tfmc_instruments/shaders/post/keyboard_blur.fsh`, the vanilla box blur plus one
 check: if the centre pixel has that colour the image passes through unblurred and the last pass

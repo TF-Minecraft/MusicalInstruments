@@ -27,10 +27,11 @@ in vec2 texCoord;
 
 out vec4 fragColor;
 
-const vec3 MARKER = vec3(250.0, 251.0, 253.0) / 255.0;
-
+// The marker is drawn as text, and text is multiplied by the lightmap colour, which is not
+// exactly white. Its colour is (0, 0, 24): red and green stay 0, blue scales a little.
 bool isMarker(vec4 colour) {
-    return all(lessThan(abs(colour.rgb - MARKER), vec3(0.75 / 255.0)));
+    ivec3 c = ivec3(round(colour.rgb * 255.0));
+    return c.r == 0 && c.g == 0 && c.b >= 8 && c.b <= 48;
 }
 
 // The dot is one GUI pixel (GUI scale 1-6 screen pixels); look in a 3x3 patch at the centre.

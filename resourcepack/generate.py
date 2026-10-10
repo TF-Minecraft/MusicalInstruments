@@ -95,7 +95,10 @@ def cp(size_index, offset):
 
 BUTTON_CP = 0xE300
 BLUR_MARKER_CP = 0xE3F0
-BLUR_MARKER = (250, 251, 253, 255)  # must match MARKER in shaders/post/keyboard_blur.fsh
+# Must match isMarker() in shaders/post/keyboard_blur.fsh. Text pixels are multiplied by the
+# lightmap colour (not exactly white, e.g. with brightness mods), so the marker is pure dark blue:
+# red and green stay exactly 0 under any multiplier, and the shader accepts a range of blue.
+BLUR_MARKER = (0, 0, 24, 255)
 SPACE_POS = 0xE400
 SPACE_NEG = 0xE410
 
@@ -242,7 +245,7 @@ def main():
     # advance 2 (x = -1) and ascent -3 (top = 0), lands on GUI pixel (-1, 0) from the centre.
     # The crosshair is drawn around ((width - 15) / 2 + 7, (height - 15) / 2 + 7), so that pixel
     # is on the crosshair: its centre for even widths and odd heights, its vertical line for even
-    # sizes. Near white, it reads as part of the crosshair when no menu is open.
+    # sizes, so it sits inside the crosshair when no menu is open.
     # assets/tfmc_instruments/shaders/post/keyboard_blur.fsh looks for it there.
     marker = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
     marker.putpixel((3, 0), BLUR_MARKER)
