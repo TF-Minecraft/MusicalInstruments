@@ -21,23 +21,25 @@ public final class KeyboardFont {
 
     /** Keyboard sizes offered in the options menu. */
     public enum Size {
-        SMALL("Small", 0, 32, 44, 5, new int[]{36, 40, 42}),
-        MEDIUM("Medium", 1, 40, 54, 6, new int[]{46, 50, 52}),
-        LARGE("Large (GUI scale 3 or lower)", 2, 52, 72, 7, new int[]{58, 64, 70});
+        SMALL("Small", 0, 32, 44, 6, 26, new int[]{36, 40, 42}),
+        MEDIUM("Medium", 1, 40, 54, 7, 30, new int[]{46, 50, 52}),
+        LARGE("Large (GUI scale 3 or lower)", 2, 52, 72, 8, 36, new int[]{58, 64, 70});
 
         private final String label;
         private final int index;
         private final int diameter;
         private final int pitchX;
         private final int lines;
+        private final int tabWidth;
         private final int[] rings;
 
-        Size(String label, int index, int diameter, int pitchX, int lines, int[] rings) {
+        Size(String label, int index, int diameter, int pitchX, int lines, int tabWidth, int[] rings) {
             this.label = label;
             this.index = index;
             this.diameter = diameter;
             this.pitchX = pitchX;
             this.lines = lines;
+            this.tabWidth = tabWidth;
             this.rings = rings;
         }
 
@@ -53,9 +55,18 @@ public final class KeyboardFont {
             return this.pitchX;
         }
 
-        /** Text lines per keyboard row. */
+        /** Text lines per keyboard row; the last one holds the CHORD tabs. */
         public int lines() {
             return this.lines;
+        }
+
+        /** Width of the gold CHORD tab under each circle. */
+        public int tabWidth() {
+            return this.tabWidth;
+        }
+
+        public char tabChar(boolean lit) {
+            return (char) (0xE000 + this.index * 0x100 + 0x30 + (lit ? 1 : 0));
         }
 
         public int ring(int frame) {

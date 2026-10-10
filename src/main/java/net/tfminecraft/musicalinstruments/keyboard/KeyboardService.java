@@ -119,7 +119,9 @@ public final class KeyboardService implements Listener {
     private Cell[] cells(Session session, boolean rings, long now) {
         Cell[] cells = new Cell[KeyboardFont.CELLS];
         for (int i = 0; i < cells.length; i++) {
-            cells[i] = cell(now - session.started[i], rings);
+            Cell cell = cell(now - session.started[i], rings);
+            boolean tab = now - session.chordStarted[i] >= 0 && now - session.chordStarted[i] < 2 * FRAME_MS;
+            cells[i] = tab ? new Cell(cell.lit(), cell.ring(), true) : cell;
         }
         return cells;
     }
@@ -134,6 +136,9 @@ public final class KeyboardService implements Listener {
         StringBuilder out = new StringBuilder(size.name());
         for (Cell cell : cells) {
             out.append(cell.lit() ? 'L' : '-').append(cell.ring());
+            if (cell.chord()) {
+                out.append('T');
+            }
         }
         return out.toString();
     }
@@ -262,7 +267,8 @@ public final class KeyboardService implements Listener {
             }
             session.open = true;
             if (chord >= 0) {
-                // Light every note of the chord so it reads as a chord.
+                // Light the tab and every note of the chord so it reads as a chord.
+                session.chordStarted[index] = now;
                 for (int cell : NoteMap.chordCells(index / KeyboardFont.COLUMNS, index % KeyboardFont.COLUMNS)) {
                     session.started[cell] = now;
                 }
@@ -288,6 +294,7 @@ public final class KeyboardService implements Listener {
                 this.options.save(player, choice);
             }
             Arrays.fill(session.started, Long.MIN_VALUE / 2);
+            Arrays.fill(session.chordStarted, Long.MIN_VALUE / 2);
             this.send(player, session, now);
             return;
         }
@@ -423,6 +430,7 @@ public final class KeyboardService implements Listener {
         final String instrument;
         final boolean free;
         final long[] started = new long[KeyboardFont.CELLS];
+        final long[] chordStarted = new long[KeyboardFont.CELLS];
         boolean open;
         boolean inOptions;
         boolean dirty;
@@ -437,6 +445,7 @@ public final class KeyboardService implements Listener {
             this.instrument = instrument;
             this.free = free;
             Arrays.fill(this.started, Long.MIN_VALUE / 2);
+            Arrays.fill(this.chordStarted, Long.MIN_VALUE / 2);
         }
 
         boolean animating(long now) {

@@ -45,6 +45,8 @@ class KeyboardViewTest {
         for (char c : text.toCharArray()) {
             if (c >= 0xE400) {
                 total += KeyboardFontTest.advanceOf(String.valueOf(c));
+            } else if ((c & 0xFF) >= 0x30) {
+                total += KeyboardFont.advance(size.tabWidth());
             } else if ((c & 0xFF) >= 0x20) {
                 total += KeyboardFont.advance(size.ring((c & 0xFF) - 0x20));
             } else {
@@ -111,10 +113,15 @@ class KeyboardViewTest {
     }
 
     @Test
-    void chordStripsSayWhichChordTheyPlay() {
-        List<List<TextComponent>> lines = lines(KeyboardView.grid(Size.SMALL, idle()));
+    void chordStripsShowAChordTabAndSayWhichChordTheyPlay() {
+        Cell[] cells = idle();
+        cells[4] = new Cell(false, -1, true);
+        List<List<TextComponent>> lines = lines(KeyboardView.grid(Size.SMALL, cells));
         TextComponent strip = lines.get(Size.SMALL.lines() - 1).get(4);
         assertEquals(Component.text("G chord"), strip.hoverEvent().value());
+        assertTrue(strip.content().indexOf(Size.SMALL.tabChar(true)) >= 0);
+        TextComponent other = lines.get(Size.SMALL.lines() - 1).get(5);
+        assertTrue(other.content().indexOf(Size.SMALL.tabChar(false)) >= 0);
     }
 
     @Test

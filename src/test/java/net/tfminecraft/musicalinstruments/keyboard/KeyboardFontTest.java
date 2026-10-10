@@ -42,7 +42,10 @@ class KeyboardFontTest {
         assertEquals("Small", Size.SMALL.label());
         assertEquals(40, Size.MEDIUM.diameter());
         assertEquals(72, Size.LARGE.pitchX());
-        assertEquals(7, Size.LARGE.lines());
+        assertEquals(8, Size.LARGE.lines());
+        assertEquals(30, Size.MEDIUM.tabWidth());
+        assertEquals('\uE030', Size.SMALL.tabChar(false));
+        assertEquals('\uE231', Size.LARGE.tabChar(true));
         assertEquals(3, Size.MEDIUM.ringFrames());
         assertEquals(52, Size.MEDIUM.ring(2));
         assertEquals(7 * 44, Size.SMALL.gridWidth());

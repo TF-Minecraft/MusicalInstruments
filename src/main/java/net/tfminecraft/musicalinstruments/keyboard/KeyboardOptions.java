@@ -81,7 +81,7 @@ public final class KeyboardOptions {
                 DialogBody.plainMessage(Component.text(
                         "Top row: high notes. Middle row: normal notes. Bottom row: low notes.", NamedTextColor.GRAY), 250),
                 DialogBody.plainMessage(Component.text(
-                        "Chords: click just below a circle to play the chord on that note.", NamedTextColor.GRAY), 250));
+                        "Chords: click the gold CHORD tab under a note to play its chord.", NamedTextColor.GRAY), 250));
         ActionButton done = ActionButton.builder(Component.text("Done"))
                 .tooltip(Component.text("Back to the keyboard"))
                 .width(150)

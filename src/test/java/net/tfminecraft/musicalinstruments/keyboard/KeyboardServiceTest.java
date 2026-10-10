@@ -129,6 +129,7 @@ class KeyboardServiceTest {
         assertEquals(new Cell(true, -1), KeyboardService.cell(99, false));
         assertEquals(Cell.IDLE, KeyboardService.cell(100, false));
         assertEquals("SMALL--1L0", KeyboardService.signature(Size.SMALL, new Cell[]{Cell.IDLE, new Cell(true, 0)}));
+        assertEquals("SMALL--1T", KeyboardService.signature(Size.SMALL, new Cell[]{new Cell(false, -1, true)}));
     }
 
     @Test
@@ -187,6 +188,18 @@ class KeyboardServiceTest {
         assertEquals(1, played.size());
         assertEquals(2, sent());
 
+        // The tab under the note stays lit for two frames; a clock step back keeps it unlit.
+        nextTick(60);
+        service.tick();
+        assertEquals(3, sent());
+        nextTick(60);
+        service.tick();
+        assertEquals(4, sent());
+        time.addAndGet(-500);
+        nextTick(0);
+        service.tick();
+        time.addAndGet(500);
+
         nextTick(300);
         service.handleClick(player, KeyboardView.chordKey(14), null); // C chord, built from C E G
         assertEquals(4, player.getHeardSounds().size());
@@ -198,9 +211,10 @@ class KeyboardServiceTest {
         verify(plugin, times(2)).recordInstrumentPlay("lute");
 
         // The chord's three circles flash, then the keyboard rests again.
+        int before = sent();
         nextTick(250);
         service.tick();
-        assertEquals(4, sent());
+        assertEquals(before + 1, sent());
         when(manager.getSoundKey("lute", 2, false)).thenReturn(null);
         when(manager.getSoundKey("lute", 4, false)).thenReturn(null);
         when(manager.getSoundKey("lute", 6, false)).thenReturn(null);

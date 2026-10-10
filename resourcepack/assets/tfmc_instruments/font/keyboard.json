@@ -469,6 +469,60 @@
    ]
   },
   {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_tab.png",
+   "height": 8,
+   "ascent": 7,
+   "chars": [
+    "\ue030"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_tab_lit.png",
+   "height": 8,
+   "ascent": 7,
+   "chars": [
+    "\ue031"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_tab.png",
+   "height": 8,
+   "ascent": 7,
+   "chars": [
+    "\ue130"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_tab_lit.png",
+   "height": 8,
+   "ascent": 7,
+   "chars": [
+    "\ue131"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_tab.png",
+   "height": 8,
+   "ascent": 7,
+   "chars": [
+    "\ue230"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_tab_lit.png",
+   "height": 8,
+   "ascent": 7,
+   "chars": [
+    "\ue231"
+   ]
+  },
+  {
    "type": "space",
    "advances": {
     "\ue400": 1,

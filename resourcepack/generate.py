@@ -29,6 +29,21 @@ SIZES = [
     ("medium", 40, [46, 50, 52], 0, 2),
     ("large", 52, [58, 64, 70], 2, 2),
 ]
+# Width (GUI px) of the gold "CHORD" tab drawn under each circle; it is the chord click zone.
+TAB_WIDTHS = {"small": 26, "medium": 30, "large": 36}
+TAB_HEIGHT = 8
+GOLD = (238, 206, 132, 255)
+GOLD_RIM = (196, 156, 82, 255)
+GOLD_INK = (110, 72, 28, 255)
+AMBER = (214, 148, 52, 255)
+AMBER_RIM = (170, 110, 30, 255)
+TAB_FONT = {
+    "C": [".##", "#..", "#..", "#..", ".##"],
+    "H": ["#.#", "#.#", "###", "#.#", "#.#"],
+    "O": [".#.", "#.#", "#.#", "#.#", ".#."],
+    "R": ["##.", "#.#", "##.", "#.#", "#.#"],
+    "D": ["##.", "#.#", "#.#", "#.#", "##."],
+}
 RING_ALPHA = [255, 160, 80]
 
 # Note symbols (11 x 5) in the spirit of a lyre's note marks; one per note C..B.
@@ -152,6 +167,29 @@ def ring(n, alpha, thickness=1, factor=SCALE):
     return out
 
 
+def tab(width, lit):
+    """A rounded gold label reading CHORD, at 2 texels per GUI pixel."""
+    img = Image.new("RGBA", (width, TAB_HEIGHT), (0, 0, 0, 0))
+    fill, rim = (AMBER, AMBER_RIM) if lit else (GOLD, GOLD_RIM)
+    ink = CREAM if lit else GOLD_INK
+    for y in range(TAB_HEIGHT):
+        for x in range(width):
+            corner = (x in (0, width - 1)) and (y in (0, TAB_HEIGHT - 1))
+            if corner:
+                continue
+            edge = x in (0, width - 1) or y in (0, TAB_HEIGHT - 1)
+            img.putpixel((x, y), rim if edge else fill)
+    word = "CHORD"
+    text_width = len(word) * 4 - 1
+    x = (width - text_width) // 2
+    for letter in word:
+        draw_mask(img, TAB_FONT[letter], x, (TAB_HEIGHT - 5) // 2, ink)
+        x += 4
+    out = upscale(img, 2)
+    mark_width(out)
+    return out
+
+
 def button():
     # 150 x 20 GUI px at 1 texel per GUI px like the vanilla sprite (font pages are 256 px).
     w, h = 150, 20
@@ -209,6 +247,10 @@ def main():
             bitmap(f"{sname}_ring{k}", ring(rd // px, RING_ALPHA[k], thick, f), rd, ascent + (rd - d) // 2, cp(si, 0x20 + k))
     # Button: 20 tall, top 3 px below line 0 so the label on line 1 (y+9..y+17) is centred on it.
     bitmap("options_button", button(), 20, 4, BUTTON_CP)
+    for si, (sname, _, _, _, _) in enumerate(SIZES):
+        # Ascent 7: the tab's top sits on its text line's top.
+        bitmap(f"{sname}_chord_tab", tab(TAB_WIDTHS[sname], False), TAB_HEIGHT, 7, cp(si, 0x30))
+        bitmap(f"{sname}_chord_tab_lit", tab(TAB_WIDTHS[sname], True), TAB_HEIGHT, 7, cp(si, 0x31))
 
     advances = {}
     for i in range(10):

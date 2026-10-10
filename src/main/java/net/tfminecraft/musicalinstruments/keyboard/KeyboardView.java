@@ -34,9 +34,13 @@ public final class KeyboardView {
     private KeyboardView() {
     }
 
-    /** Visual state of one note circle. */
-    public record Cell(boolean lit, int ring) {
-        public static final Cell IDLE = new Cell(false, -1);
+    /** Visual state of one note circle and the CHORD tab under it. */
+    public record Cell(boolean lit, int ring, boolean chord) {
+        public static final Cell IDLE = new Cell(false, -1, false);
+
+        public Cell(boolean lit, int ring) {
+            this(lit, ring, false);
+        }
     }
 
     public static Key noteKey(int cell) {
@@ -138,7 +142,7 @@ public final class KeyboardView {
                     int index = row * KeyboardFont.COLUMNS + column;
                     String text = line == 0 ? noteCell(size, column, cells[index], lead) : blankCell;
                     if (chordLine) {
-                        out.append(Component.text(text)
+                        out.append(Component.text(tabCell(size, cells[index].chord()))
                                 .clickEvent(ClickEvent.custom(chordKey(index), "0b"))
                                 .hoverEvent(HoverEvent.showText(Component.text(NOTE_NAMES[column] + " chord"))));
                     } else {
@@ -148,6 +152,13 @@ public final class KeyboardView {
             }
         }
         return out.build();
+    }
+
+    /** The gold CHORD tab centred under the circle; it marks where to click for the chord. */
+    private static String tabCell(Size size, boolean lit) {
+        int lead = (size.pitchX() - size.tabWidth()) / 2;
+        return KeyboardFont.space(lead) + size.tabChar(lit)
+                + KeyboardFont.space(size.pitchX() - lead - KeyboardFont.advance(size.tabWidth()));
     }
 
     private static String noteCell(Size size, int column, Cell cell, int lead) {
