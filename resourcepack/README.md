@@ -26,3 +26,10 @@ white fills are skipped. The client draws that white outline around dialog text 
 flashed around the keyboard after every note until the next frame arrived). Side effect: other
 pure white menu fills, such as the focus border of a selected list entry, are hidden too while
 the server pack is active. Re-check the shader when the client version changes.
+
+## No background blur
+
+`assets/minecraft/post_effect/blur.json` replaces the 1.21.10 menu blur with two plain copy
+passes, so the world stays sharp behind the keyboard like in the reference video. A resource
+pack cannot tell menus apart, so other menus (pause, options, dialogs) are not blurred either
+while the server pack is active. Delete the file to get the blur back.
