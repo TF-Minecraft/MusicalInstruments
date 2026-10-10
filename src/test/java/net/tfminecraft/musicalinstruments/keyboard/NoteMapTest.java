@@ -20,7 +20,7 @@ class NoteMapTest {
     private KeyboardSettings settings;
 
     static KeyboardSettings settings(Map<String, String[][]> rows) {
-        return new KeyboardSettings(true, true, Size.MEDIUM, true, 2.0f, 0.5f, true, rows);
+        return new KeyboardSettings(true, true, Size.MEDIUM, true, ChordStyle.ROW, 2.0f, 0.5f, true, rows);
     }
 
     private static String[][] harpRows() {

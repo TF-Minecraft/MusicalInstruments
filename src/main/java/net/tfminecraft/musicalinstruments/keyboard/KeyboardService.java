@@ -107,13 +107,13 @@ public final class KeyboardService implements Listener {
     private void send(Player player, Session session, long now) {
         KeyboardOptions.Prefs prefs = this.options.prefs(player);
         Cell[] cells = this.cells(session, prefs.rings(), now);
-        session.signature = signature(prefs.size(), cells);
-        session.showingFrame = !session.signature.equals(signature(prefs.size(), idle()));
+        session.signature = prefs.chordStyle() + signature(prefs.size(), cells);
+        session.showingFrame = !session.signature.equals(prefs.chordStyle() + signature(prefs.size(), idle()));
         session.open = true;
         session.inOptions = false;
         session.dirty = false;
         session.lastSendTick = Bukkit.getCurrentTick();
-        player.showDialog(KeyboardView.dialog(prefs.size(), cells));
+        player.showDialog(KeyboardView.dialog(prefs.size(), prefs.chordStyle(), cells));
     }
 
     private Cell[] cells(Session session, boolean rings, long now) {
@@ -183,7 +183,8 @@ public final class KeyboardService implements Listener {
                 continue;
             }
             KeyboardOptions.Prefs prefs = this.options.prefs(player);
-            if (session.dirty || !signature(prefs.size(), this.cells(session, prefs.rings(), now)).equals(session.signature)) {
+            String signature = prefs.chordStyle() + signature(prefs.size(), this.cells(session, prefs.rings(), now));
+            if (session.dirty || !signature.equals(session.signature)) {
                 this.send(player, session, now);
             }
         }

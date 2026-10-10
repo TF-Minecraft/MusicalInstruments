@@ -488,6 +488,150 @@
   },
   {
    "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_mark.png",
+   "height": 7,
+   "ascent": 7,
+   "chars": [
+    "\ue032"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_mark_lit.png",
+   "height": 7,
+   "ascent": 7,
+   "chars": [
+    "\ue033"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_c.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue040"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_c_lit.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue050"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_dm.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue041"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_dm_lit.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue051"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_em.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue042"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_em_lit.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue052"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_f.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue043"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_f_lit.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue053"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_g.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue044"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_g_lit.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue054"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_am.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue045"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_am_lit.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue055"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_bdim.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue046"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/small_chord_row_bdim_lit.png",
+   "height": 14,
+   "ascent": 7,
+   "chars": [
+    "\ue056"
+   ]
+  },
+  {
+   "type": "bitmap",
    "file": "tfmc_instruments:font/keyboard/medium_chord_tab.png",
    "height": 8,
    "ascent": 7,
@@ -506,6 +650,150 @@
   },
   {
    "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_mark.png",
+   "height": 7,
+   "ascent": 7,
+   "chars": [
+    "\ue132"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_mark_lit.png",
+   "height": 7,
+   "ascent": 7,
+   "chars": [
+    "\ue133"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_c.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue140"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_c_lit.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue150"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_dm.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue141"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_dm_lit.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue151"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_em.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue142"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_em_lit.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue152"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_f.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue143"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_f_lit.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue153"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_g.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue144"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_g_lit.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue154"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_am.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue145"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_am_lit.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue155"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_bdim.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue146"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/medium_chord_row_bdim_lit.png",
+   "height": 15,
+   "ascent": 7,
+   "chars": [
+    "\ue156"
+   ]
+  },
+  {
+   "type": "bitmap",
    "file": "tfmc_instruments:font/keyboard/large_chord_tab.png",
    "height": 8,
    "ascent": 7,
@@ -520,6 +808,150 @@
    "ascent": 7,
    "chars": [
     "\ue231"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_mark.png",
+   "height": 8,
+   "ascent": 7,
+   "chars": [
+    "\ue232"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_mark_lit.png",
+   "height": 8,
+   "ascent": 7,
+   "chars": [
+    "\ue233"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_c.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue240"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_c_lit.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue250"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_dm.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue241"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_dm_lit.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue251"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_em.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue242"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_em_lit.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue252"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_f.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue243"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_f_lit.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue253"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_g.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue244"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_g_lit.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue254"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_am.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue245"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_am_lit.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue255"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_bdim.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue246"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "tfmc_instruments:font/keyboard/large_chord_row_bdim_lit.png",
+   "height": 16,
+   "ascent": 7,
+   "chars": [
+    "\ue256"
    ]
   },
   {

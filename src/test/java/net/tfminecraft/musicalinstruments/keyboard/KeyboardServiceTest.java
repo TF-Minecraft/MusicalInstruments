@@ -238,7 +238,7 @@ class KeyboardServiceTest {
     @Test
     void ringsOffOnlyFlashes() {
         service.open(player, "lute", false);
-        service.handleClick(player, KeyboardOptions.DONE, new KeyboardOptions.Choice(null, false));
+        service.handleClick(player, KeyboardOptions.DONE, new KeyboardOptions.Choice(null, false, null));
         nextTick(0);
         click(3);
         int afterClick = sent();
@@ -276,7 +276,7 @@ class KeyboardServiceTest {
 
     @Test
     void particlesCanBeTurnedOff() {
-        KeyboardSettings quiet = new KeyboardSettings(true, true, Size.SMALL, true, 2f, 0.5f, false, Map.of());
+        KeyboardSettings quiet = new KeyboardSettings(true, true, Size.SMALL, true, ChordStyle.ROW, 2f, 0.5f, false, Map.of());
         service = new KeyboardService(plugin, manager, quiet, time::get);
         service.open(player, "lute", false);
         click(0);
@@ -355,7 +355,7 @@ class KeyboardServiceTest {
         service.tick(); // options on screen: no keyboard redraw
         assertEquals(2, sent());
 
-        service.handleClick(player, KeyboardOptions.DONE, new KeyboardOptions.Choice("LARGE", true));
+        service.handleClick(player, KeyboardOptions.DONE, new KeyboardOptions.Choice("LARGE", true, null));
         assertEquals(3, sent());
         service.handleClick(player, KeyboardOptions.DONE, null);
         assertEquals(4, sent());
@@ -366,7 +366,7 @@ class KeyboardServiceTest {
         service.handleClick(player, KeyboardOptions.CLOSE, null);
         assertFalse(service.isOpen(player));
         service.open(player, "lute", false);
-        service.handleClick(player, KeyboardOptions.CLOSE, new KeyboardOptions.Choice("SMALL", null));
+        service.handleClick(player, KeyboardOptions.CLOSE, new KeyboardOptions.Choice("SMALL", null, null));
         assertFalse(service.isOpen(player));
     }
 
@@ -555,7 +555,7 @@ class KeyboardServiceTest {
 
     @Test
     void rightClickOpeningCanBeTurnedOffOrDenied() {
-        KeyboardSettings off = new KeyboardSettings(true, false, Size.SMALL, true, 2f, 0.5f, true, Map.of());
+        KeyboardSettings off = new KeyboardSettings(true, false, Size.SMALL, true, ChordStyle.ROW, 2f, 0.5f, true, Map.of());
         service = new KeyboardService(plugin, manager, off, time::get);
         interact(Action.RIGHT_CLICK_AIR, null, EquipmentSlot.HAND);
         assertEquals(0, sent());

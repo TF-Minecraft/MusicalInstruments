@@ -37,12 +37,25 @@ GOLD_RIM = (196, 156, 82, 255)
 GOLD_INK = (110, 72, 28, 255)
 AMBER = (214, 148, 52, 255)
 AMBER_RIM = (170, 110, 30, 255)
+# Small three-dot chord mark under each circle: (gap rows above the dots so it sits just
+# under the circle, dot spacing). The glyph's top is its text line's top (ascent 7).
+MARK_OFFSETS = {"small": 4, "medium": 4, "large": 5}
+# One chord row under the keyboard: button size per keyboard size, and labels.
+ROW_BUTTONS = {"small": (36, 14), "medium": (46, 15), "large": (60, 16)}
+CHORD_LABELS = ["C", "Dm", "Em", "F", "G", "Am", "B*"]
 TAB_FONT = {
     "C": [".##", "#..", "#..", "#..", ".##"],
     "H": ["#.#", "#.#", "###", "#.#", "#.#"],
     "O": [".#.", "#.#", "#.#", "#.#", ".#."],
     "R": ["##.", "#.#", "##.", "#.#", "#.#"],
     "D": ["##.", "#.#", "#.#", "#.#", "##."],
+    "E": ["###", "#..", "##.", "#..", "###"],
+    "F": ["###", "#..", "##.", "#..", "#.."],
+    "G": [".##", "#..", "#.#", "#.#", ".##"],
+    "A": [".#.", "#.#", "###", "#.#", "#.#"],
+    "B": ["##.", "#.#", "##.", "#.#", "##."],
+    "m": [".....", ".....", "####.", "#.#.#", "#.#.#"],
+    "*": [".#.", "#.#", ".#.", "...", "..."],
 }
 RING_ALPHA = [255, 160, 80]
 
@@ -190,6 +203,42 @@ def tab(width, lit):
     return out
 
 
+def mark(offset, lit):
+    """Three small gold dots, `offset` transparent rows down, at 2 texels per GUI pixel."""
+    fill, rim = (AMBER, AMBER_RIM) if lit else (GOLD, GOLD_RIM)
+    width, height = 12, offset + 3
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    for i in range(3):
+        x0 = i * 5
+        for y in range(2):
+            for x in range(2):
+                img.putpixel((x0 + x, offset + y), fill if y == 0 else rim)
+    out = upscale(img, 2)
+    mark_width(out)
+    return out
+
+
+def row_button(width, height, label, lit):
+    """A rounded gold button with a chord name, at 2 texels per GUI pixel."""
+    fill, rim = (AMBER, AMBER_RIM) if lit else (GOLD, GOLD_RIM)
+    ink = CREAM if lit else GOLD_INK
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    for y in range(height):
+        for x in range(width):
+            if (x in (0, width - 1)) and (y in (0, height - 1)):
+                continue
+            edge = x in (0, width - 1) or y in (0, height - 1)
+            img.putpixel((x, y), rim if edge else fill)
+    text_width = sum(len(TAB_FONT[c][0]) + 1 for c in label) - 1
+    x = (width - text_width) // 2
+    for c in label:
+        draw_mask(img, TAB_FONT[c], x, (height - 5) // 2, ink)
+        x += len(TAB_FONT[c][0]) + 1
+    out = upscale(img, 2)
+    mark_width(out)
+    return out
+
+
 def button():
     # 150 x 20 GUI px at 1 texel per GUI px like the vanilla sprite (font pages are 256 px).
     w, h = 150, 20
@@ -251,6 +300,14 @@ def main():
         # Ascent 7: the tab's top sits on its text line's top.
         bitmap(f"{sname}_chord_tab", tab(TAB_WIDTHS[sname], False), TAB_HEIGHT, 7, cp(si, 0x30))
         bitmap(f"{sname}_chord_tab_lit", tab(TAB_WIDTHS[sname], True), TAB_HEIGHT, 7, cp(si, 0x31))
+        offset = MARK_OFFSETS[sname]
+        bitmap(f"{sname}_chord_mark", mark(offset, False), offset + 3, 7, cp(si, 0x32))
+        bitmap(f"{sname}_chord_mark_lit", mark(offset, True), offset + 3, 7, cp(si, 0x33))
+        bw, bh = ROW_BUTTONS[sname]
+        for ci, label in enumerate(CHORD_LABELS):
+            name = label.replace("*", "dim").lower()
+            bitmap(f"{sname}_chord_row_{name}", row_button(bw, bh, label, False), bh, 7, cp(si, 0x40 + ci))
+            bitmap(f"{sname}_chord_row_{name}_lit", row_button(bw, bh, label, True), bh, 7, cp(si, 0x50 + ci))
 
     advances = {}
     for i in range(10):

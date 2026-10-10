@@ -28,23 +28,25 @@ public final class KeyboardOptions {
     private final KeyboardSettings settings;
     private final NamespacedKey sizeKey;
     private final NamespacedKey ringsKey;
+    private final NamespacedKey chordStyleKey;
 
     public KeyboardOptions(InstrumentPlugin plugin, KeyboardSettings settings) {
         this.settings = settings;
         this.sizeKey = new NamespacedKey(plugin, "keyboard_size");
         this.ringsKey = new NamespacedKey(plugin, "keyboard_rings");
+        this.chordStyleKey = new NamespacedKey(plugin, "keyboard_chord_style");
     }
 
-    public record Prefs(Size size, boolean rings) {
+    public record Prefs(Size size, boolean rings, ChordStyle chordStyle) {
     }
 
     /** Values submitted from the options dialog; null fields were not shown. */
-    public record Choice(String size, Boolean rings) {
+    public record Choice(String size, Boolean rings, String chordStyle) {
         static Choice read(DialogResponseView view) {
             if (view == null) {
                 return null;
             }
-            return new Choice(view.getText("size"), view.getBoolean("rings"));
+            return new Choice(view.getText("size"), view.getBoolean("rings"), view.getText("chords"));
         }
     }
 
@@ -52,7 +54,9 @@ public final class KeyboardOptions {
         PersistentDataContainer data = player.getPersistentDataContainer();
         Size size = Size.byName(data.get(this.sizeKey, PersistentDataType.STRING), this.settings.defaultSize());
         Byte rings = data.get(this.ringsKey, PersistentDataType.BYTE);
-        return new Prefs(size, rings == null ? this.settings.defaultRings() : rings != 0);
+        ChordStyle style = ChordStyle.byName(data.get(this.chordStyleKey, PersistentDataType.STRING),
+                this.settings.defaultChordStyle());
+        return new Prefs(size, rings == null ? this.settings.defaultRings() : rings != 0, style);
     }
 
     public void save(Player player, Choice choice) {
@@ -62,6 +66,10 @@ public final class KeyboardOptions {
         }
         if (choice.rings() != null) {
             data.set(this.ringsKey, PersistentDataType.BYTE, (byte) (choice.rings() ? 1 : 0));
+        }
+        if (choice.chordStyle() != null) {
+            data.set(this.chordStyleKey, PersistentDataType.STRING,
+                    ChordStyle.byName(choice.chordStyle(), this.settings.defaultChordStyle()).name());
         }
     }
 
@@ -74,6 +82,12 @@ public final class KeyboardOptions {
         List<DialogInput> inputs = new ArrayList<>();
         inputs.add(DialogInput.singleOption("size", Component.text("Keyboard size"), sizes).width(200).build());
         inputs.add(DialogInput.bool("rings", Component.text("Ring effect (off: flash only)")).initial(prefs.rings()).build());
+        List<SingleOptionDialogInput.OptionEntry> styles = new ArrayList<>();
+        for (ChordStyle style : ChordStyle.values()) {
+            styles.add(SingleOptionDialogInput.OptionEntry.create(style.name(), Component.text(style.label()),
+                    style == prefs.chordStyle()));
+        }
+        inputs.add(DialogInput.singleOption("chords", Component.text("Chord buttons"), styles).width(200).build());
         String name = instrument.replace('_', ' ');
         List<DialogBody> body = List.of(
                 DialogBody.plainMessage(Component.text("Playing: ", NamedTextColor.GRAY)
@@ -81,7 +95,7 @@ public final class KeyboardOptions {
                 DialogBody.plainMessage(Component.text(
                         "Top row: high notes. Middle row: normal notes. Bottom row: low notes.", NamedTextColor.GRAY), 250),
                 DialogBody.plainMessage(Component.text(
-                        "Chords: click the gold CHORD tab under a note to play its chord.", NamedTextColor.GRAY), 250));
+                        "Chords: click the gold chord buttons (pick their style above).", NamedTextColor.GRAY), 250));
         ActionButton done = ActionButton.builder(Component.text("Done"))
                 .tooltip(Component.text("Back to the keyboard"))
                 .width(150)

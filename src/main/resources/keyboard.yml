@@ -9,6 +9,10 @@ open-on-right-click: true
 default-size: medium
 # Flash and ring animation on the circle you play.
 ring-effect: true
+# How chords are shown (players can change it under "Instrument Options..."):
+# row = one row of chord buttons (C Dm Em F G Am B°) under the keyboard, middle octave;
+# marks = small gold dots under every note; tabs = a gold CHORD tab under every note.
+chord-buttons: row
 # Top row = high octave, middle row = the instrument's normal notes, bottom row = low octave.
 # Instruments with a recorded second octave (their sneak sounds are *_single) use those
 # recordings for the top row; otherwise the normal notes are pitched by these factors.
