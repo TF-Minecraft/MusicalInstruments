@@ -102,12 +102,13 @@ class StudioStoreRecoveryTest {
             track.put("slot", slot); yaml.set("tracks", List.of(track)); yaml.save(file.toFile());
             assertThrows(IOException.class, () -> store.song(project.song().id()));
         }
-        for (int mode = 0; mode < 3; mode++) {
+        for (int mode = 0; mode < 4; mode++) {
             YamlConfiguration yaml = new YamlConfiguration(); yaml.loadFromString(valid);
             Map<String, Object> track = new LinkedHashMap<>((Map<String, Object>) yaml.getMapList("tracks").getFirst());
             if (mode == 0) yaml.set("tracks", Collections.nCopies(9, track));
             else {
-                track.put("notes", mode == 1 ? Collections.nCopies(Song.MAX_NOTES + 1, List.of(0, "lute", "note", 1, 1)) : List.of(List.of(0, "lute")));
+                track.put("notes", mode == 1 ? Collections.nCopies(Song.MAX_NOTES + 1, List.of(0, "lute", "note", 1, 1))
+                        : mode == 2 ? List.of(List.of(0, "lute")) : List.of(List.of(0, "lute", 7, 1, 1)));
                 yaml.set("tracks", List.of(track));
             }
             yaml.save(file.toFile()); assertThrows(IOException.class, () -> store.song(project.song().id()));

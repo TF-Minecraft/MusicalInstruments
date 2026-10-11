@@ -41,6 +41,12 @@ public record Song(UUID id, UUID owner, String author, String title, List<Track>
         return tracks.stream().filter(track -> track.slot() == slot).findFirst().orElse(null);
     }
 
+    /** Whether playback emits any sound; matches the notes {@link Timeline} schedules. */
+    public boolean audible() {
+        return tracks.stream().anyMatch(track -> !track.muted() && track.gain() > 0
+                && track.notes().stream().anyMatch(note -> note.volume() > 0));
+    }
+
     public Song replace(Track track) {
         List<Track> result = new ArrayList<>(tracks);
         result.removeIf(existing -> existing.slot() == track.slot());

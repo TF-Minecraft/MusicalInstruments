@@ -357,7 +357,7 @@ public final class StudioService {
         if (project.pending() != null) {
             throw new IllegalArgumentException("Keep or discard your pending take first");
         }
-        if (new Timeline(project.song(), -1).due(Song.MAX_TICKS).isEmpty()) {
+        if (!project.song().audible()) {
             throw new IllegalArgumentException("The mix needs at least one audible note");
         }
         Song edition = project.song().edition();

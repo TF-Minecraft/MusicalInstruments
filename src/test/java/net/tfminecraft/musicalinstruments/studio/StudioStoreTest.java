@@ -103,9 +103,9 @@ class StudioStoreTest {
         Project legacy = project();
         store.save(legacy);
         Path archived = directory.resolve("projects").resolve(legacy.song().owner().toString()).resolve(legacy.song().id() + ".yml");
-        Files.delete(archived); // Simulate the original single-project layout.
+        Files.delete(archived); // Simulate the original single-project layout, present when the server starts.
         Project second = new Project(new Song(UUID.randomUUID(), legacy.song().owner(), "Musician", "Second", List.of()), null, 100, true);
-        store.save(second);
+        new StudioStore(directory).save(second);
         StudioStore reopened = new StudioStore(directory);
         assertEquals(2, reopened.projects(legacy.song().owner()).size());
         assertEquals(legacy, reopened.project(legacy.song().owner(), legacy.song().id()));
@@ -113,6 +113,31 @@ class StudioStoreTest {
         reopened.save(legacy);
         assertEquals(legacy, new StudioStore(directory).project(legacy.song().owner()).orElseThrow());
         assertEquals(second, reopened.project(legacy.song().owner(), second.song().id()));
+    }
+
+    @Test
+    void decodedNotesShareRepeatedInstrumentAndSampleNames() throws Exception {
+        var notes = List.of(new Note(0, "lute", "tfmc:lute.c4", 1, 1), new Note(1, "lute", "tfmc:lute.c4", 1, 1));
+        Project project = new Project(new Song(UUID.randomUUID(), UUID.randomUUID(), "Musician", "Song",
+                List.of(new Track(1, 10, 1, false, notes))), null, 100, false);
+        new StudioStore(directory).save(project);
+        Song song = new StudioStore(directory).project(project.song().owner()).orElseThrow().song();
+        Note first = song.track(1).notes().get(0);
+        Note second = song.track(1).notes().get(1);
+        assertSame(first.instrument(), second.instrument());
+        assertSame(first.sound(), second.sound());
+    }
+
+    @Test
+    void laterSavesDoNotReparseTheSelectedFile() throws Exception {
+        StudioStore store = new StudioStore(directory);
+        Project project = project();
+        store.save(project);
+        Path selected = directory.resolve("projects").resolve(project.song().owner() + ".yml");
+        Files.writeString(selected, "[broken yaml");
+        assertThrows(IOException.class, () -> new StudioStore(directory).save(project)); // A new store checks once.
+        store.save(project.accept());
+        assertEquals(project.accept(), store.project(project.song().owner()).orElseThrow());
     }
 
     @Test

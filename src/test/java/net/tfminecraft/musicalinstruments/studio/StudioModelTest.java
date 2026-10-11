@@ -41,6 +41,16 @@ class StudioModelTest {
     }
 
     @Test
+    void audibilityIgnoresMutedSilentAndZeroVolumeTracks() {
+        Track muted = new Track(1, 10, 1, false, List.of(note(0, "a"))).mix(1, true);
+        Track silent = new Track(2, 10, 0, false, List.of(note(0, "b")));
+        Track quiet = new Track(3, 10, 1, false, List.of(new Note(0, "lute", "c", 0, 1)));
+        assertFalse(song(muted, silent, quiet).audible());
+        assertFalse(song().audible());
+        assertTrue(song(muted, new Track(4, 10, 1, false, List.of(new Note(0, "lute", "d", 0, 1), note(1, "e")))).audible());
+    }
+
+    @Test
     void acceptingOrDiscardingATakePreservesPublishedEditions() {
         Song original = song(new Track(1, 100, 1, false, List.of(note(0, "original"))));
         Song edition = original.edition();

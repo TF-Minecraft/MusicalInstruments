@@ -15,13 +15,18 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Versioned, bounded data files. A failed write never truncates the last saved project. */
 public final class StudioStore {
     // Enough for a full 12,000-note song plus a replacement take, including escaped names.
     static final int MAX_FILE_BYTES = 32_000_000;
     private final Path root;
+    // Owners whose selected file already has its per-project copy. Both the main thread
+    // and the checkpoint writer save, so the set is concurrent.
+    private final Set<UUID> archived = ConcurrentHashMap.newKeySet();
 
     public StudioStore(Path root) throws IOException {
         this.root = root;
@@ -115,8 +120,9 @@ public final class StudioStore {
         UUID owner = project.song().owner();
         Path selectedFile = root.resolve("projects").resolve(owner + ".yml");
         Files.createDirectories(projectFile(owner, project.song().id()).getParent());
-        // Archive the original single-project file before selecting a different song.
-        if (Files.exists(selectedFile)) {
+        // Archive the original single-project file before selecting a different song. Every save
+        // below writes both copies, so this parse runs once per owner instead of on every save.
+        if (!archived.contains(owner) && Files.exists(selectedFile)) {
             Project previous = decodeProject(selectedFile, owner, null);
             Path previousFile = projectFile(owner, previous.song().id());
             if (!Files.exists(previousFile)) write(previousFile, encodeProject(previous), true);
@@ -124,6 +130,7 @@ public final class StudioStore {
         YamlConfiguration yaml = encodeProject(project);
         write(projectFile(owner, project.song().id()), yaml, true);
         write(selectedFile, yaml, true);
+        archived.add(owner);
     }
 
     private YamlConfiguration encodeProject(Project project) {
@@ -228,7 +235,7 @@ public final class StudioStore {
             if (note.size() != 5) {
                 throw new IllegalArgumentException("Invalid note fields");
             }
-            notes.add(new Note(integer(note.get(0)), (String) note.get(1), (String) note.get(2),
+            notes.add(new Note(integer(note.get(0)), text(note.get(1)), text(note.get(2)),
                     number(note.get(3)).floatValue(), number(note.get(4)).floatValue()));
         }
         return new Track(integer(raw.get("slot")), integer(raw.get("length")),
@@ -245,6 +252,14 @@ public final class StudioStore {
 
     private List<?> list(Object value) {
         return (List<?>) value;
+    }
+
+    private String text(Object value) {
+        if (!(value instanceof String text)) {
+            throw new IllegalArgumentException("Expected text");
+        }
+        // Songs repeat a few instrument and sample names; share one copy instead of one per note.
+        return text.intern();
     }
 
     private Number number(Object value) {
