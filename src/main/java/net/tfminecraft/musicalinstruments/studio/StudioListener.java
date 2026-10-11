@@ -34,6 +34,8 @@ public final class StudioListener implements Listener {
     public void interact(PlayerInteractEvent event) {
         if (event.getAction() != Action.RIGHT_CLICK_BLOCK || event.getClickedBlock() == null
                 || event.useInteractedBlock() == Event.Result.DENY
+                // Check the type first: getState() copies block entities such as chest inventories.
+                || event.getClickedBlock().getType() != Material.JUKEBOX
                 || !(event.getClickedBlock().getState() instanceof Jukebox box)) {
             return;
         }

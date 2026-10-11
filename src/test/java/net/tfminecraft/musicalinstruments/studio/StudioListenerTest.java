@@ -47,6 +47,7 @@ class StudioListenerTest {
         when(studio.discs()).thenReturn(discs);
         when(studio.station()).thenReturn(StudioStation.none());
         when(block.getState()).thenReturn(box);
+        when(block.getType()).thenReturn(Material.JUKEBOX);
         when(player.getInventory()).thenReturn(inventory);
         when(player.hasPermission("instruments.play")).thenReturn(true);
         when(discs.custom(disc)).thenReturn(true);
@@ -162,6 +163,16 @@ class StudioListenerTest {
         // The keyboard (HIGHEST) skips clicks whose item use is denied.
         assertEquals(Event.Result.DENY, main.useItemInHand());
         assertEquals(Event.Result.DENY, off.useItemInHand());
+    }
+
+    @Test
+    void clicksOnOtherBlocksDoNotCopyTheirBlockState() throws Exception {
+        when(block.getType()).thenReturn(Material.CHEST);
+        PlayerInteractEvent click = event(EquipmentSlot.HAND);
+        listener.interact(click);
+        verify(block, never()).getState();
+        verify(studio, never()).play(any(), any());
+        assertNotEquals(Event.Result.DENY, click.useItemInHand());
     }
 
     @Test

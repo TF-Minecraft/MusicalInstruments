@@ -597,8 +597,9 @@ public final class StudioService {
             }
             Block block = world.getBlockAt(key.x, key.y, key.z);
             int elapsed = (int) (clock - playback.start);
-            if (!(block.getState() instanceof Jukebox box)
-                    || !playback.song.id().equals(discs.songId(box.getRecord()))
+            // The block type is cheap to read every tick. Reading the record copies the block state and
+            // item, so it is checked once a second; ejection and breaking stop playback immediately.
+            if (block.getType() != Material.JUKEBOX || elapsed % 20 == 0 && !holds(block, playback.song)
                     || elapsed >= playback.song.lengthTicks() + settings.tailTicks()) {
                 it.remove();
                 continue;
@@ -617,6 +618,10 @@ public final class StudioService {
                 }
             }
         }
+    }
+
+    private boolean holds(Block block, Song song) {
+        return block.getState() instanceof Jukebox box && song.id().equals(discs.songId(box.getRecord()));
     }
 
     private void emit(Player player, List<Timeline.Trigger> due) {

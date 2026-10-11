@@ -9,7 +9,10 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.util.BoundingBox;
 
+import java.lang.reflect.Method;
 import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 /**
@@ -20,6 +23,7 @@ import java.util.logging.Logger;
 public final class StudioStation {
     /** Squared reach within which a player can keep using the station's controls. */
     private static final double REACH_SQUARED = 36;
+    private static final Map<String, Method> METHODS = new ConcurrentHashMap<>();
     private final Material material;
     private final String itemsAdderId;
 
@@ -135,11 +139,27 @@ public final class StudioStation {
     // CustomBlock.byAlreadyPlaced(block) / CustomFurniture.byAlreadySpawned(entity), then getNamespacedID().
     private static String namespacedId(String type, String lookup, Class<?> parameter, Object target) {
         try {
-            Object custom = Class.forName(type).getMethod(lookup, parameter).invoke(null, target);
-            return custom == null ? null : (String) custom.getClass().getMethod("getNamespacedID").invoke(custom);
+            Object custom = method(type + "#" + lookup + "#" + parameter.getName(),
+                    () -> Class.forName(type).getMethod(lookup, parameter)).invoke(null, target);
+            return custom == null ? null : (String) method(custom.getClass().getName() + "#getNamespacedID",
+                    () -> custom.getClass().getMethod("getNamespacedID")).invoke(custom);
         } catch (ReflectiveOperationException | RuntimeException ex) {
             return null;
         }
+    }
+
+    @FunctionalInterface
+    private interface Lookup { Method find() throws ReflectiveOperationException; }
+
+    // matches(Block) runs on every right-click on a block and every studio menu refresh, so each
+    // reflective lookup is resolved once. Failures are not cached: ItemsAdder may enable later.
+    private static Method method(String key, Lookup lookup) throws ReflectiveOperationException {
+        Method method = METHODS.get(key);
+        if (method == null) {
+            method = lookup.find();
+            METHODS.put(key, method);
+        }
+        return method;
     }
 
     private static boolean pluginEnabled(String name) {

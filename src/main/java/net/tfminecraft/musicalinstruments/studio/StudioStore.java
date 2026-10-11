@@ -38,6 +38,15 @@ public final class StudioStore {
         this.root = root;
         Files.createDirectories(root.resolve("projects"));
         Files.createDirectories(root.resolve("songs"));
+        // A crash between writing and moving leaves a temporary file; it never holds the only copy.
+        try (var files = Files.walk(root, 3)) {
+            for (Path file : files.filter(StudioStore::temporary).toList()) Files.deleteIfExists(file);
+        }
+    }
+
+    private static boolean temporary(Path file) {
+        String name = file.getFileName().toString();
+        return name.startsWith("studio-") && name.endsWith(".tmp");
     }
 
     public Optional<Project> project(UUID owner) throws IOException {
@@ -214,10 +223,11 @@ public final class StudioStore {
             Path previousFile = projectFile(owner, previous.song().id());
             if (!Files.exists(previousFile)) write(previousFile, encodeProject(previous), true);
         }
-        YamlConfiguration yaml = encodeProject(project);
+        // Both copies hold the same bytes, so the project is serialized once.
+        byte[] contents = encodeProject(project).saveToString().getBytes(StandardCharsets.UTF_8);
         Path file = projectFile(owner, project.song().id());
-        write(file, yaml, true);
-        write(selectedFile, yaml, true);
+        write(file, contents, true);
+        write(selectedFile, contents, true);
         archived.add(owner);
         remember(project, file, selectedFile);
     }
@@ -269,10 +279,13 @@ public final class StudioStore {
     }
 
     private void write(Path file, YamlConfiguration yaml, boolean replace) throws IOException {
+        write(file, yaml.saveToString().getBytes(StandardCharsets.UTF_8), replace);
+    }
+
+    private void write(Path file, byte[] contents, boolean replace) throws IOException {
         if (!replace && Files.exists(file)) {
             throw new IOException("Published editions cannot be overwritten");
         }
-        byte[] contents = yaml.saveToString().getBytes(StandardCharsets.UTF_8);
         if (contents.length > MAX_FILE_BYTES) {
             throw new IOException("Studio file exceeds the size limit: " + file.getFileName());
         }

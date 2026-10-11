@@ -38,6 +38,21 @@ class StudioStoreTest {
     }
 
     @Test
+    void startupRemovesTemporaryFilesLeftByAnInterruptedWrite() throws Exception {
+        Project project = project();
+        new StudioStore(directory).save(project);
+        Path folder = directory.resolve("projects").resolve(project.song().owner().toString());
+        Path leftover = Files.writeString(folder.resolve("studio-123.tmp"), "partial");
+        Path unrelated = Files.writeString(folder.resolve("notes.tmp"), "kept");
+        Path similar = Files.writeString(directory.resolve("songs").resolve("studio-readme.txt"), "kept");
+        StudioStore reopened = new StudioStore(directory);
+        assertFalse(Files.exists(leftover));
+        assertTrue(Files.exists(unrelated));
+        assertTrue(Files.exists(similar));
+        assertEquals(project, reopened.project(project.song().owner()).orElseThrow());
+    }
+
+    @Test
     void projectsAndPendingTakesSurviveANewStoreInstance() throws Exception {
         Project project = project();
         new StudioStore(directory).save(project);

@@ -669,6 +669,22 @@ class StudioServiceTest {
     }
 
     @Test
+    void jukeboxRecordIsCheckedOnceASecondAndARemovedJukeboxStopsAtOnce() throws Exception {
+        Song song = song(new Track(1, 60, 1, false, List.of(new Note(0, "lute", "first", 4, 1),
+                new Note(5, "lute", "second", 4, 1), new Note(25, "lute", "third", 4, 1))));
+        ItemStack disc = mock(ItemStack.class);
+        Block block = jukebox(song, disc);
+        studio.play(block, disc);
+        clearInvocations(block);
+        for (int elapsed = 0; elapsed <= 5; elapsed++) tick.run();
+        verify(block, times(1)).getState();
+        verify(player).playSound(any(Location.class), eq("second"), eq(SoundCategory.RECORDS), anyFloat(), anyFloat());
+        when(block.getType()).thenReturn(Material.AIR);
+        for (int elapsed = 6; elapsed <= 25; elapsed++) tick.run();
+        verify(player, never()).playSound(any(Location.class), eq("third"), any(SoundCategory.class), anyFloat(), anyFloat());
+    }
+
+    @Test
     void jukeboxAppliesItsSnapshotAndPlaysEveryTrackOnlyToNearbyListeners() throws Exception {
         Song song = song(track(1, "lute"), track(2, "flute"));
         ItemStack disc = mock(ItemStack.class);
