@@ -52,6 +52,10 @@ public final class StudioStation {
             return none();
         }
         if (type.equals("ia")) {
+            if (!parts[1].matches("[a-z0-9._-]+:[a-z0-9/._-]+")) {
+                logger.warning("Invalid studio station '" + path + "'. Expected ia.<namespace:id>.");
+                return none();
+            }
             // ItemsAdder may enable after this plugin; warnIfUnavailable checks it once all have.
             return itemsAdder(parts[1]);
         }
@@ -90,7 +94,10 @@ public final class StudioStation {
         if (itemsAdderId.equals(namespacedId("dev.lone.itemsadder.api.CustomBlock", "byAlreadyPlaced", Block.class, block))) {
             return true;
         }
-        // Furniture is an entity; solid furniture also places a hitbox block around it.
+        if (itemsAdderId.equals(namespacedId("dev.lone.itemsadder.api.CustomFurniture", "byAlreadySpawned", Block.class, block))) {
+            return true;
+        }
+        // Older ItemsAdder versions may only expose the entity lookup.
         for (Entity entity : block.getWorld().getNearbyEntities(BoundingBox.of(block))) {
             if (matches(entity)) {
                 return true;

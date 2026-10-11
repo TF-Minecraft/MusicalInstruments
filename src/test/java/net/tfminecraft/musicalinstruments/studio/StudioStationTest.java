@@ -54,6 +54,7 @@ class StudioStationTest {
     void tearDown() {
         CustomBlock.lookup = target -> null;
         CustomFurniture.lookup = target -> null;
+        CustomFurniture.blockLookup = target -> null;
         MockBukkit.unmock();
     }
 
@@ -80,6 +81,9 @@ class StudioStationTest {
         assertDisabled("v.stick", "is not a block");
         assertDisabled("v.air", "is not a block");
         assertDisabled("v.jukebox", "cannot be a jukebox");
+        for (String id : List.of("music_station", ":music_station", "tfmc:", "tfmc:music:station", "TFMC:music_station", "tfmc:music station")) {
+            assertDisabled("ia." + id, "Expected ia.<namespace:id>");
+        }
     }
 
     @Test
@@ -164,6 +168,20 @@ class StudioStationTest {
         assertNull(station.require(player, (Location) null));
         when(player.hasPermission("instruments.record")).thenReturn(false);
         assertThrows(IllegalArgumentException.class, () -> station.require(player, (Block) null));
+    }
+
+    @Test
+    void furnitureHitboxesResolveWithoutAnIntersectingEntityAndFallBackWhenUnavailable() {
+        StudioStation station = StudioStation.itemsAdder("tfmc:music_station");
+        CustomFurniture.blockLookup = target -> new CustomFurniture("tfmc:music_station");
+        assertTrue(station.matches(block));
+        verify(world, never()).getNearbyEntities(any(BoundingBox.class));
+        CustomFurniture.blockLookup = target -> new CustomFurniture("tfmc:other");
+        assertFalse(station.matches(block));
+        CustomFurniture.blockLookup = target -> { throw new UnsupportedOperationException("Older ItemsAdder"); };
+        CustomFurniture.lookup = target -> new CustomFurniture("tfmc:music_station");
+        when(world.getNearbyEntities(any(BoundingBox.class))).thenReturn(List.of(furniture));
+        assertTrue(station.matches(block));
     }
 
     private Location mockLocation(Block station) {
