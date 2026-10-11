@@ -23,13 +23,70 @@ class StudioStoreTest {
                 saved, 100, false);
         StudioStore store = new StudioStore(directory);
         store.save(project);
-        long bytes = Files.size(directory.resolve("projects").resolve(project.song().owner() + ".yml"));
+        long bytes = Files.size(directory.resolve("projects").resolve(project.song().owner().toString()).resolve(project.song().id() + ".yml"));
         assertTrue(bytes > 8_000_000);
         assertTrue(bytes <= StudioStore.MAX_FILE_BYTES);
         assertEquals(project, store.project(project.song().owner()).orElseThrow());
     }
 
     @TempDir Path directory;
+
+    // Rewrites a saved project into the layout before selection pointers, which kept the selected
+    // project whole in projects/<owner>.yml; the oldest layout had no per-project copy at all.
+    private Path legacy(Project project, boolean withoutCopy) throws IOException {
+        Path folder = directory.resolve("projects").resolve(project.song().owner().toString());
+        Path legacy = directory.resolve("projects").resolve(project.song().owner() + ".yml");
+        Files.copy(folder.resolve(project.song().id() + ".yml"), legacy);
+        Files.delete(folder.resolve(StudioStore.SELECTED));
+        if (withoutCopy) Files.delete(folder.resolve(project.song().id() + ".yml"));
+        return legacy;
+    }
+
+    @Test
+    void savesWriteOneProjectCopyAndASmallSelection() throws Exception {
+        StudioStore store = new StudioStore(directory);
+        Project first = project();
+        Song song = first.song();
+        Project second = new Project(new Song(UUID.randomUUID(), song.owner(), song.author(), "Second", List.of()), null, 100, false);
+        store.save(first);
+        store.save(first.accept());
+        store.save(second);
+        Path folder = directory.resolve("projects").resolve(song.owner().toString());
+        try (var files = Files.list(directory.resolve("projects"))) {
+            assertEquals(List.of(folder), files.toList());
+        }
+        try (var files = Files.list(folder)) {
+            assertEquals(java.util.Set.of(first.song().id() + ".yml", second.song().id() + ".yml", StudioStore.SELECTED, StudioStore.INDEX),
+                    files.map(path -> path.getFileName().toString()).collect(java.util.stream.Collectors.toSet()));
+        }
+        assertEquals(second.song().id().toString(), Files.readString(folder.resolve(StudioStore.SELECTED)));
+        assertEquals(second, new StudioStore(directory).project(song.owner()).orElseThrow());
+        Files.delete(folder.resolve(second.song().id() + ".yml"));
+        assertTrue(new StudioStore(directory).project(song.owner()).isEmpty());
+        for (String invalid : List.of("not a project", "x".repeat(65))) {
+            Files.writeString(folder.resolve(StudioStore.SELECTED), invalid);
+            assertThrows(IOException.class, () -> new StudioStore(directory).project(song.owner()));
+        }
+    }
+
+    @Test
+    void theNewerLegacySelectionOrPerProjectCopyBecomesTheProjectOnce() throws Exception {
+        for (boolean legacyIsNewer : new boolean[] {false, true}) {
+            StudioStore store = new StudioStore(directory);
+            Project project = project();
+            Song song = project.song();
+            Project renamed = new Project(new Song(song.id(), song.owner(), song.author(), "Renamed", song.tracks()), null, 100, false);
+            store.save(project);
+            Path legacy = legacy(project, false);
+            store.save(renamed); // This store already migrated the owner, so it leaves the legacy file alone.
+            Path file = directory.resolve("projects").resolve(song.owner().toString()).resolve(song.id() + ".yml");
+            Files.setLastModifiedTime(legacyIsNewer ? file : legacy, java.nio.file.attribute.FileTime.fromMillis(1));
+            StudioStore reopened = new StudioStore(directory);
+            assertEquals(legacyIsNewer ? project : renamed, reopened.project(song.owner()).orElseThrow());
+            assertFalse(Files.exists(legacy));
+            assertEquals(List.of(ProjectSummary.of(legacyIsNewer ? project : renamed)), reopened.summaries(song.owner()));
+        }
+    }
 
     private Project project() {
         var old = new Track(1, 100, 0.5f, true, List.of(new Note(15, "lute", "instruments.lute", 4, 1)));
@@ -119,7 +176,7 @@ class StudioStoreTest {
         Project project = project();
         store.save(project);
         UUID anotherOwner = UUID.randomUUID();
-        Files.copy(directory.resolve("projects").resolve(project.song().owner() + ".yml"),
+        Files.copy(directory.resolve("projects").resolve(project.song().owner().toString()).resolve(project.song().id() + ".yml"),
                 directory.resolve("projects").resolve(anotherOwner + ".yml"));
         assertThrows(IOException.class, () -> store.project(anotherOwner));
         Song edition = store.publishEdition(project.song());
@@ -134,8 +191,7 @@ class StudioStoreTest {
         StudioStore store = new StudioStore(directory);
         Project legacy = project();
         store.save(legacy);
-        Path archived = directory.resolve("projects").resolve(legacy.song().owner().toString()).resolve(legacy.song().id() + ".yml");
-        Files.delete(archived); // Simulate the original single-project layout, present when the server starts.
+        legacy(legacy, true); // Simulate the original single-project layout, present when the server starts.
         Project second = new Project(new Song(UUID.randomUUID(), legacy.song().owner(), "Musician", "Second", List.of()), null, 100, true);
         new StudioStore(directory).save(second);
         StudioStore reopened = new StudioStore(directory);
@@ -221,11 +277,11 @@ class StudioStoreTest {
 
     @Test
     void deletionRemovesALegacySelectionAndRejectsUnknownProjects() throws Exception {
-        StudioStore store = new StudioStore(directory);
         Project legacy = project();
         UUID owner = legacy.song().owner();
-        store.save(legacy);
-        Files.delete(directory.resolve("projects").resolve(owner.toString()).resolve(legacy.song().id() + ".yml"));
+        new StudioStore(directory).save(legacy);
+        legacy(legacy, true);
+        StudioStore store = new StudioStore(directory);
         assertThrows(IllegalArgumentException.class, () -> store.delete(owner, UUID.randomUUID()));
         store.delete(owner, legacy.song().id());
         assertTrue(store.project(owner).isEmpty());

@@ -20,7 +20,7 @@ class StudioStoreRecoveryTest {
     void oversizedSerializationCannotReplaceTheLastSavedFile() throws Exception {
         StudioStore store = new StudioStore(directory);
         Project project = project(); store.save(project);
-        Path selected = directory.resolve("projects/" + project.song().owner() + ".yml");
+        Path selected = directory.resolve("projects/" + project.song().owner() + "/" + project.song().id() + ".yml");
         byte[] original = Files.readAllBytes(selected);
         YamlConfiguration oversized = mock(YamlConfiguration.class);
         when(oversized.saveToString()).thenReturn("x".repeat(StudioStore.MAX_FILE_BYTES + 1));
@@ -39,25 +39,16 @@ class StudioStoreRecoveryTest {
     }
 
     @Test
-    void newerArchiveRecoversAnInterruptedSelectionWriteAndLegacySelectionRemainsUsable() throws Exception {
+    void removedProjectFilesAreNoLongerAvailable() throws Exception {
         StudioStore store = new StudioStore(directory);
         Project original = project();
         store.save(original);
-        Path selected = directory.resolve("projects/" + original.song().owner() + ".yml");
-        Path archive = directory.resolve("projects/" + original.song().owner() + "/" + original.song().id() + ".yml");
-        Song song = original.song();
-        Project renamed = new Project(new Song(song.id(), song.owner(), song.author(), "Recovered", song.tracks()), null, 100, false);
-        store.save(renamed);
-        Files.copy(archive, selected, StandardCopyOption.REPLACE_EXISTING);
-        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(selected.toFile());
-        yaml.set("title", "Original"); yaml.save(selected.toFile());
-        Files.setLastModifiedTime(selected, FileTime.fromMillis(1));
-        assertEquals(renamed, store.project(original.song().owner()).orElseThrow());
-        Files.delete(archive);
-        assertEquals("Original", store.project(original.song().owner(), original.song().id()).song().title());
-        assertThrows(IllegalArgumentException.class, () -> store.project(original.song().owner(), UUID.randomUUID()));
-        store.delete(original.song().owner(), original.song().id());
-        assertTrue(store.summaries(original.song().owner()).isEmpty());
+        UUID owner = original.song().owner();
+        assertThrows(IllegalArgumentException.class, () -> store.project(owner, UUID.randomUUID()));
+        Files.delete(directory.resolve("projects/" + owner + "/" + original.song().id() + ".yml"));
+        assertThrows(IllegalArgumentException.class, () -> store.project(owner, original.song().id()));
+        assertTrue(store.project(owner).isEmpty());
+        assertTrue(store.summaries(owner).isEmpty());
     }
 
     @Test
@@ -85,7 +76,7 @@ class StudioStoreRecoveryTest {
         assertEquals(2, store.summaries(song.owner()).size());
         store.delete(song.owner(), first.song().id());
         assertEquals(second, store.project(song.owner()).orElseThrow());
-        Files.delete(directory.resolve("projects/" + song.owner() + ".yml"));
+        Files.delete(directory.resolve("projects/" + song.owner() + "/" + StudioStore.SELECTED));
         store.delete(song.owner(), second.song().id());
         assertTrue(store.summaries(song.owner()).isEmpty());
     }

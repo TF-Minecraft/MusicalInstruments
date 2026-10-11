@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,22 +18,22 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /** Versioned, bounded data files. A failed write never truncates the last saved project. */
 public final class StudioStore {
     // Enough for a full 12,000-note song plus a replacement take, including escaped names.
     static final int MAX_FILE_BYTES = 32_000_000;
-    // Not a .yml file, so project listings skip it.
+    // Neither is a .yml file, so project listings skip them.
     static final String INDEX = "library.index";
-    private static final String SELECTED = "selected";
+    // Holds the selected project's ID, so the selection is not a second copy of the project.
+    static final String SELECTED = "selected";
     // Stands in for the edition ID while hashing, so the ID depends only on the music and its labels.
     private static final UUID CONTENT_ID = new UUID(0, 0);
     private final Path root;
-    // Owners whose selected file already has its per-project copy. Both the main thread
-    // and the checkpoint writer save, so the set is concurrent.
-    private final Set<UUID> archived = ConcurrentHashMap.newKeySet();
+    // Owners already moved off the legacy layout. Both the main thread and the checkpoint
+    // writer use the store, so the set is also the migration lock.
+    private final Set<UUID> migrated = new HashSet<>();
 
     public StudioStore(Path root) throws IOException {
         this.root = root;
@@ -50,45 +51,73 @@ public final class StudioStore {
     }
 
     public Optional<Project> project(UUID owner) throws IOException {
-        Path file = root.resolve("projects").resolve(owner + ".yml");
-        if (!Files.exists(file)) {
-            return Optional.empty();
-        }
-        Project selected = decodeProject(file, owner, null);
-        Path current = projectFile(owner, selected.song().id());
-        return Optional.of(Files.exists(current) && Files.getLastModifiedTime(current).compareTo(Files.getLastModifiedTime(file)) > 0
-                ? decodeProject(current, owner, selected.song().id()) : selected);
+        migrate(owner);
+        UUID id = selected(owner);
+        Path file = id == null ? null : projectFile(owner, id);
+        return file != null && Files.exists(file) ? Optional.of(decodeProject(file, owner, id)) : Optional.empty();
     }
 
     public Project project(UUID owner, UUID id) throws IOException {
+        migrate(owner);
         Path file = projectFile(owner, id);
-        if (Files.exists(file)) return decodeProject(file, owner, id);
-        return project(owner).filter(project -> project.song().id().equals(id))
-                .orElseThrow(() -> new IllegalArgumentException("That project is no longer available"));
+        if (!Files.exists(file)) throw new IllegalArgumentException("That project is no longer available");
+        return decodeProject(file, owner, id);
     }
 
     /** The owner's projects for the library, sorted by title, without loading their notes. */
     public List<ProjectSummary> summaries(UUID owner) throws IOException {
-        Map<String, ProjectSummary> index = index(owner);
-        ProjectSummary selected = index.remove(SELECTED);
-        Map<UUID, ProjectSummary> result = new LinkedHashMap<>();
-        for (ProjectSummary summary : index.values()) result.put(summary.id(), summary);
-        if (selected != null) result.putIfAbsent(selected.id(), selected); // A legacy project saved only as the selection.
-        return result.values().stream().sorted(ProjectSummary.ORDER).toList();
+        return index(owner).values().stream().sorted(ProjectSummary.ORDER).toList();
+    }
+
+    private Path directory(UUID owner) {
+        return root.resolve("projects").resolve(owner.toString());
     }
 
     private Path projectFile(UUID owner, UUID id) {
-        return root.resolve("projects").resolve(owner.toString()).resolve(id + ".yml");
+        return directory(owner).resolve(id + ".yml");
+    }
+
+    private UUID selected(UUID owner) throws IOException {
+        Path file = directory(owner).resolve(SELECTED);
+        if (!Files.exists(file)) return null;
+        try {
+            return UUID.fromString(Files.size(file) > 64 ? "" : Files.readString(file, StandardCharsets.UTF_8).strip());
+        } catch (IllegalArgumentException ex) {
+            throw new IOException("Invalid project selection for " + owner, ex);
+        }
+    }
+
+    private void select(UUID owner, UUID id) throws IOException {
+        if (!id.equals(selected(owner))) write(directory(owner).resolve(SELECTED), id.toString().getBytes(StandardCharsets.UTF_8), true);
+    }
+
+    // Earlier versions also kept the selected project whole in projects/<owner>.yml, next to its
+    // per-project copy. The newer of the two becomes the per-project file, once per owner, and the
+    // selection becomes a pointer, so each save writes the project once.
+    private void migrate(UUID owner) throws IOException {
+        synchronized (migrated) {
+            Path legacy = root.resolve("projects").resolve(owner + ".yml");
+            if (migrated.contains(owner)) return;
+            if (Files.exists(legacy)) {
+                UUID id = decodeProject(legacy, owner, null).song().id();
+                Path file = projectFile(owner, id);
+                Files.createDirectories(file.getParent());
+                if (!Files.exists(file) || Files.getLastModifiedTime(file).compareTo(Files.getLastModifiedTime(legacy)) <= 0) {
+                    write(file, Files.readAllBytes(legacy), true);
+                }
+                select(owner, id);
+                Files.delete(legacy);
+            }
+            migrated.add(owner);
+        }
     }
 
     public void delete(UUID owner, UUID id) throws IOException {
-        Map<String, ProjectSummary> index = index(owner); // Validates identity and ownership of every project file.
-        ProjectSummary selected = index.get(SELECTED);
-        boolean isSelected = selected != null && selected.id().equals(id);
-        if (!index.containsKey(id.toString()) && !isSelected) {
+        // Validates identity and ownership of every project file.
+        if (!index(owner).containsKey(id.toString())) {
             throw new IllegalArgumentException("That project is no longer available");
         }
-        if (isSelected) Files.deleteIfExists(root.resolve("projects").resolve(owner + ".yml"));
+        if (id.equals(selected(owner))) Files.delete(directory(owner).resolve(SELECTED));
         Files.deleteIfExists(projectFile(owner, id));
     }
 
@@ -96,7 +125,8 @@ public final class StudioStore {
     // modification time, so listing parses only files written outside save(). The cache is rebuilt when
     // missing, stale or unreadable; concurrent updates may lose an entry, which costs one reparse later.
     private Map<String, ProjectSummary> index(UUID owner) throws IOException {
-        Path directory = root.resolve("projects").resolve(owner.toString());
+        migrate(owner);
+        Path directory = directory(owner);
         Map<String, List<?>> cached = readIndex(directory);
         Map<String, List<?>> fresh = new TreeMap<>();
         Map<String, ProjectSummary> result = new LinkedHashMap<>();
@@ -114,8 +144,6 @@ public final class StudioStore {
                 }
             }
         }
-        Path selected = root.resolve("projects").resolve(owner + ".yml");
-        if (Files.exists(selected)) summarize(SELECTED, selected, owner, null, cached, fresh, result);
         if (!fresh.equals(cached)) writeIndex(directory, fresh);
         return result;
     }
@@ -129,12 +157,11 @@ public final class StudioStore {
         result.put(key, summary);
     }
 
-    // Records a saved project's summary so the next listing need not parse the files just written.
-    private void remember(Project project, Path file, Path selected) throws IOException {
+    // Records a saved project's summary so the next listing need not parse the file just written.
+    private void remember(Project project, Path file) throws IOException {
         Map<String, List<?>> entries = readIndex(file.getParent());
         ProjectSummary summary = ProjectSummary.of(project);
         entries.put(summary.id().toString(), encodeSummary(stamp(file), summary));
-        entries.put(SELECTED, encodeSummary(stamp(selected), summary));
         writeIndex(file.getParent(), entries);
     }
 
@@ -153,7 +180,7 @@ public final class StudioStore {
             if (!stamp.equals(entry.getFirst())) return null;
             ProjectSummary summary = new ProjectSummary(UUID.fromString((String) entry.get(1)), (String) entry.get(2),
                     integer(entry.get(3)), integer(entry.get(4)), integer(entry.get(5)));
-            return id == null || summary.id().equals(id) ? summary : null;
+            return summary.id().equals(id) ? summary : null;
         } catch (RuntimeException ex) {
             return null; // A malformed entry is rebuilt from its project file.
         }
@@ -214,22 +241,12 @@ public final class StudioStore {
 
     public void save(Project project) throws IOException {
         UUID owner = project.song().owner();
-        Path selectedFile = root.resolve("projects").resolve(owner + ".yml");
-        Files.createDirectories(projectFile(owner, project.song().id()).getParent());
-        // Archive the original single-project file before selecting a different song. Every save
-        // below writes both copies, so this parse runs once per owner instead of on every save.
-        if (!archived.contains(owner) && Files.exists(selectedFile)) {
-            Project previous = decodeProject(selectedFile, owner, null);
-            Path previousFile = projectFile(owner, previous.song().id());
-            if (!Files.exists(previousFile)) write(previousFile, encodeProject(previous), true);
-        }
-        // Both copies hold the same bytes, so the project is serialized once.
-        byte[] contents = encodeProject(project).saveToString().getBytes(StandardCharsets.UTF_8);
+        migrate(owner);
         Path file = projectFile(owner, project.song().id());
-        write(file, contents, true);
-        write(selectedFile, contents, true);
-        archived.add(owner);
-        remember(project, file, selectedFile);
+        Files.createDirectories(file.getParent());
+        write(file, encodeProject(project), true);
+        select(owner, project.song().id());
+        remember(project, file);
     }
 
     private YamlConfiguration encodeProject(Project project) {
