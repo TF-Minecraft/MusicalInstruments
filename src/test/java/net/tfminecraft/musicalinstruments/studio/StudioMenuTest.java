@@ -391,4 +391,205 @@ class StudioMenuTest {
         verify(studio, never()).record(any(), anyInt());
     }
 
+    @Test
+    void renderingShowsRecordingListeningMutedTracksAndAnEmptyLibrary() throws Exception {
+        when(studio.listProjects(player)).thenReturn(List.of());
+        menu.open(player, station);
+        Track muted = project.song().track(1).mix(.5f, true);
+        project = new Project(project.song().replace(muted), null, 100, true);
+        when(studio.requireProject(player)).thenReturn(project);
+        when(studio.settings()).thenReturn(new StudioSettings(2, 40, 20, 60, 8, 32, 2, 0, 2));
+        when(studio.activity(player)).thenReturn(new StudioService.Activity(1, 2, 1, 0, false));
+        menu.openProject(player, station);
+        when(studio.activity(player)).thenReturn(new StudioService.Activity(0, 0, 0, 0, true));
+        menu.openProject(player, station);
+        assertSame(inventory, inventory.getHolder().getInventory());
+        verify(inventory, atLeastOnce()).setItem(eq(10), any());
+    }
+
+    @Test
+    void clicksCannotActForAnotherOwnerOrFromAnotherInventory() throws Exception {
+        UUID owner = player.getUniqueId();
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID());
+        click(10, ClickType.LEFT); assertNull(queued);
+        when(player.getUniqueId()).thenReturn(owner);
+        InventoryClickEvent event = mock(InventoryClickEvent.class);
+        when(event.getView()).thenReturn(view);
+        when(event.getWhoClicked()).thenReturn(mock(org.bukkit.entity.HumanEntity.class));
+        menu.click(event); assertNull(queued);
+        click(-1, ClickType.LEFT); assertNull(queued);
+        click(10, ClickType.SHIFT_RIGHT); executeClick();
+        verify(studio).record(player, 1);
+        click(10, ClickType.LEFT);
+        when(player.isOnline()).thenReturn(false); executeClick();
+        when(player.isOnline()).thenReturn(true);
+        click(10, ClickType.LEFT);
+        when(view.getTopInventory()).thenReturn(mock(Inventory.class)); executeClick();
+        verify(studio, times(1)).record(player, 1);
+        click(10, ClickType.LEFT); assertNull(queued);
+    }
+
+    @Test
+    void navigatingBackClosingAndUnassignedControlsHaveNoTrackEffects() throws Exception {
+        click(8, ClickType.LEFT); executeClick(); verify(player).closeInventory();
+        click(0, ClickType.LEFT); executeClick();
+        click(8, ClickType.LEFT); executeClick();
+        verify(player, times(1)).closeInventory();
+        menu.openProject(player, station);
+        click(51, ClickType.LEFT); executeClick();
+        click(9, ClickType.LEFT); executeClick();
+        click(0, ClickType.LEFT); executeClick();
+        for (int raw : new int[]{9, 17, 46, 45, 53, 49}) { click(raw, ClickType.LEFT); executeClick(); }
+        when(studio.settings()).thenReturn(new StudioSettings(2, 40, 20, 60, 8, 32, 2, 0, 2));
+        click(28, ClickType.LEFT); executeClick();
+        verify(studio, never()).record(any(), anyInt());
+    }
+
+    @Test
+    void volumeResetMissingSavedTracksDiscardAndTempoStepControlsAreValidated() throws Exception {
+        click(11, ClickType.LEFT); executeClick();
+        verify(studio).edit(player, new Project(project.song().replace(project.song().track(1).mix(1.25f, false)), project.pending(), 100, false));
+        click(11, ClickType.SHIFT_LEFT); executeClick();
+        verify(studio).edit(player, project);
+        click(20, ClickType.LEFT); executeClick();
+        verify(player).sendMessage("Record and keep this track first");
+        click(25, ClickType.LEFT); executeClick();
+        verify(studio).edit(player, project.discard());
+        when(studio.requireProject(player)).thenReturn(project.discard());
+        click(24, ClickType.LEFT); executeClick();
+        verify(player).sendMessage("No pending take on this track");
+        click(51, ClickType.LEFT); executeClick();
+        click(13, ClickType.SHIFT_LEFT); executeClick();
+        verify(studio).edit(player, new Project(project.song(), null, 101, false));
+        click(13, ClickType.SHIFT_RIGHT); executeClick();
+        verify(studio).edit(player, new Project(project.song(), null, 99, false));
+    }
+
+    @Test
+    void trackPagingReturnsToThePreviousFourTracks() throws Exception {
+        when(studio.settings()).thenReturn(new StudioSettings(8, 40, 20, 60, 8, 32, 2, 0, 2));
+        menu.openProject(player, station);
+        click(53, ClickType.LEFT); executeClick();
+        click(45, ClickType.LEFT); executeClick();
+        click(10, ClickType.LEFT); executeClick();
+        verify(studio).record(player, 1);
+    }
+
+    @Test
+    void publicationValidatesCursorAmountTypeProjectAndDeferredSession() throws Exception {
+        ItemStack disc = prepareCursorDisc();
+        when(disc.getAmount()).thenReturn(0); deposit(disc); assertNull(queued);
+        when(disc.getAmount()).thenReturn(1); when(disc.getType()).thenReturn(Material.AIR);
+        deposit(disc); assertNull(queued);
+        when(disc.getType()).thenReturn(Material.MUSIC_DISC_CAT);
+        when(disc.getAmount()).thenReturn(2); deposit(disc); executeClick();
+        when(disc.getAmount()).thenReturn(1); when(studio.discs().musicDisc(disc)).thenReturn(false);
+        deposit(disc); executeClick();
+        when(studio.discs().musicDisc(disc)).thenReturn(true);
+        deposit(disc); when(player.isOnline()).thenReturn(false); executeClick();
+        when(player.isOnline()).thenReturn(true);
+        deposit(disc); when(view.getTopInventory()).thenReturn(mock(Inventory.class)); executeClick();
+        when(view.getTopInventory()).thenReturn(inventory);
+        deposit(disc);
+        Project other = new Project(new Song(UUID.randomUUID(), player.getUniqueId(), "Player", "Other", List.of()), null, 100, false);
+        when(studio.requireProject(player)).thenReturn(other);
+        executeClick();
+        verify(studio, never()).publishOnDisc(any(), any());
+        click(50, ClickType.SHIFT_LEFT); assertNull(queued);
+    }
+
+    @Test
+    void overwriteConfirmationExpiresAndIsBoundToTheDisc() throws Exception {
+        ItemStack disc = prepareCursorDisc();
+        when(studio.discs().recorded(disc)).thenReturn(true);
+        deposit(disc); executeClick();
+        Object holder = inventory.getHolder();
+        var deadline = holder.getClass().getDeclaredField("overwriteDeadline");
+        deadline.setAccessible(true); deadline.setLong(holder, 0);
+        deposit(disc); executeClick();
+        verify(studio, never()).publishOnDisc(any(), any());
+        var overwrite = holder.getClass().getDeclaredField("overwriteDisc");
+        overwrite.setAccessible(true); overwrite.set(holder, mock(ItemStack.class));
+        deposit(disc); executeClick();
+        verify(studio, never()).publishOnDisc(any(), any());
+        deposit(disc); executeClick();
+        verify(studio).publishOnDisc(player, disc);
+    }
+
+    @Test
+    void refreshRendersChangesAndClosesInvalidSessions() throws Exception {
+        var callbacks = ArgumentCaptor.forClass(Runnable.class);
+        verify(scheduler).runTaskTimer(eq(plugin), callbacks.capture(), eq(10L), eq(10L));
+        Runnable refresh = callbacks.getValue();
+        refresh.run();
+        when(studio.activity(player)).thenReturn(new StudioService.Activity(0, 1, 0, 0, true));
+        refresh.run();
+        when(studio.requireProject(player)).thenReturn(new Project(project.song(), null, 105, true)); refresh.run();
+        Project other = new Project(new Song(UUID.randomUUID(), player.getUniqueId(), "Player", "Other", List.of()), null, 100, false);
+        when(studio.requireProject(player)).thenReturn(other);
+        refresh.run(); // project changed: return to library
+        refresh.run(); // library does not refresh track activity
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID()); refresh.run();
+        verify(player).closeInventory();
+        when(view.getTopInventory()).thenReturn(mock(Inventory.class)); refresh.run();
+        menu.close();
+    }
+
+    @Test
+    void refreshAndDeferredActionsReportStorageFailureAndRecheckStation() throws Exception {
+        var callbacks = ArgumentCaptor.forClass(Runnable.class);
+        verify(scheduler).runTaskTimer(eq(plugin), callbacks.capture(), eq(10L), eq(10L));
+        when(studio.requireProject(player)).thenThrow(new java.io.IOException("Read failed"));
+        callbacks.getValue().run();
+        click(10, ClickType.LEFT); executeClick();
+        verify(studio, times(2)).failure(eq(player), any(java.io.IOException.class));
+        when(player.hasPermission("instruments.record")).thenReturn(false);
+        callbacks.getValue().run();
+        verify(player, times(2)).closeInventory();
+        when(view.getTopInventory()).thenReturn(null); callbacks.getValue().run();
+        menu.close();
+    }
+
+    @Test
+    void draggingOneDiscToPublishWorksAndOtherDragsRemainProtected() throws Exception {
+        ItemStack disc = prepareCursorDisc();
+        InventoryDragEvent drag = mock(InventoryDragEvent.class);
+        when(drag.getView()).thenReturn(view);
+        when(drag.getRawSlots()).thenReturn(java.util.Set.of(50));
+        when(drag.getWhoClicked()).thenReturn(player);
+        when(drag.getOldCursor()).thenReturn(disc);
+        menu.drag(drag); executeClick(); verify(studio).publishOnDisc(player, disc);
+        when(drag.getWhoClicked()).thenReturn(mock(org.bukkit.entity.HumanEntity.class)); menu.drag(drag);
+        when(drag.getWhoClicked()).thenReturn(player); when(player.getUniqueId()).thenReturn(UUID.randomUUID()); menu.drag(drag);
+        when(drag.getRawSlots()).thenReturn(java.util.Set.of(54)); menu.drag(drag);
+        when(view.getTopInventory()).thenReturn(mock(Inventory.class)); menu.drag(drag);
+        assertNull(queued);
+    }
+
+    @Test
+    void settingsCanDisableTheMetronomeAndMixControlsPreserveAMutedTrack() throws Exception {
+        project = new Project(project.song().replace(project.song().track(1).mix(.5f, true)), project.pending(), 100, true);
+        when(studio.requireProject(player)).thenReturn(project);
+        menu.openProject(player, station);
+        click(11, ClickType.LEFT); executeClick();
+        click(12, ClickType.LEFT); executeClick();
+        verify(studio).edit(player, new Project(project.song().replace(project.song().track(1).mix(.5f, false)), project.pending(), 100, true));
+        click(51, ClickType.LEFT); executeClick();
+        click(15, ClickType.LEFT); executeClick();
+        verify(studio).edit(player, new Project(project.song(), project.pending(), 100, false));
+        var drag = mock(InventoryDragEvent.class);
+        when(drag.getView()).thenReturn(view); when(drag.getRawSlots()).thenReturn(java.util.Set.of(11));
+        menu.drag(drag); verify(drag).setCancelled(true);
+    }
+
+    @Test
+    void rightClickPublishingAndBottomInventoryClicksAreSupported() throws Exception {
+        verify(click(54, ClickType.RIGHT), never()).setCancelled(true);
+        click(50, ClickType.RIGHT); assertNull(queued);
+        click(1, ClickType.LEFT); executeClick();
+        Project other = new Project(new Song(UUID.randomUUID(), player.getUniqueId(), "Player", "Other", List.of()), null, 100, false);
+        when(studio.requireProject(player)).thenReturn(project, other);
+        assertThrows(IllegalArgumentException.class, () -> menu.openProject(player, station));
+    }
+
 }

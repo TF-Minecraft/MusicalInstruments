@@ -40,10 +40,10 @@ Each horizontal row controls one track: record, volume, mute, listen, keep and
 discard. The bottom bar controls the full mix and stops recording or preview.
 **Project settings** opens separate title, tempo and metronome controls. The
 metronome is heard only by the performer and is never recorded; count-in clicks
-always play. Place a music disc in the studio's disc slot, then click
-**Publish full song**. The encoded disc keeps the same material; no blank-disc
-preparation is needed. Publishing consumes one disc from the slot. Other copies
-keep their earlier edition.
+always play. Pick up exactly one music disc and place it on **Publish full song**.
+The encoded disc returns to the cursor with the same material; no blank-disc
+preparation is needed. A previously recorded disc needs a second click within
+10 seconds to confirm overwriting. Other copies keep their earlier edition.
 The recording guide is centered; projects with more than four tracks use pages.
 
 Commands are also available: start with `/music new <title>` and use

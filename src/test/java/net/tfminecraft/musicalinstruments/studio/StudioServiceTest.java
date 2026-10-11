@@ -567,4 +567,320 @@ class StudioServiceTest {
         studio.record(player, 1);
         assertTrue(studio.activity(player).recording());
     }
+
+    @Test
+    void projectSelectionReloadsAfterQuitAndResetWorksWithoutAnExistingProject() throws Exception {
+        assertNull(studio.project(player));
+        assertThrows(IllegalArgumentException.class, () -> studio.requireProject(player));
+        assertSame(discs, studio.discs());
+        assertEquals(4, studio.settings().tracks());
+        studio.create(player, "Reset", true);
+        Project project = studio.requireProject(player);
+        studio.selectProject(player, project.song().id());
+        studio.quit(player);
+        assertEquals(project, studio.requireProject(player));
+        Project foreign = new Project(new Song(UUID.randomUUID(), UUID.randomUUID(), "Other", "Foreign", List.of()), null, 100, false);
+        assertThrows(IllegalArgumentException.class, () -> studio.save(player, foreign));
+        studio.quit(player);
+        studio.quit(player);
+    }
+
+    @Test
+    void previewAndRecordingValidatePendingTakesSlotsAndAudibility() throws Exception {
+        studio.create(player, "Empty", false);
+        assertThrows(IllegalArgumentException.class, () -> studio.preview(player, false));
+        assertThrows(IllegalArgumentException.class, () -> studio.preview(player, true));
+        assertThrows(IllegalArgumentException.class, () -> studio.previewTrack(player, 1));
+        assertThrows(IllegalArgumentException.class, () -> studio.record(player, 0));
+        assertThrows(IllegalArgumentException.class, () -> studio.record(player, 5));
+        Track muted = new Track(1, 10, .5f, true, track(1, "muted").notes());
+        Project project = new Project(song(muted), track(2, "pending"), 100, false);
+        studio.save(player, project);
+        assertThrows(IllegalArgumentException.class, () -> studio.record(player, 1));
+        assertThrows(IllegalArgumentException.class, () -> studio.previewTrack(player, 1));
+        studio.preview(player, true);
+        assertTrue(studio.activity(player).previewing());
+        tick.run();
+        verify(player).playSound(any(Location.class), eq("pending"), any(SoundCategory.class), anyFloat(), anyFloat());
+        studio.stop(player);
+        assertFalse(studio.activity(player).previewing());
+        studio.edit(player, project.discard());
+        ItemStack disc = mock(ItemStack.class);
+        when(discs.musicDisc(disc)).thenReturn(true);
+        when(disc.getAmount()).thenReturn(1);
+        assertThrows(IllegalArgumentException.class, () -> studio.publishOnDisc(player, disc));
+        studio.record(player, 1);
+        tick.run(); tick.run();
+        studio.capture(player, "lute", "replacement", 1, 1);
+        studio.stop(player);
+        assertTrue(studio.requireProject(player).pending().muted());
+        assertEquals(.5f, studio.requireProject(player).pending().gain());
+    }
+
+    @Test
+    void invalidSamplesStopCaptureAndDisconnectedPlayersDoNotReceivePlayback() throws Exception {
+        studio.capture(player, "lute", "ignored", 1, 1);
+        studio.create(player, "Song", false);
+        studio.record(player, 1);
+        tick.run(); tick.run();
+        studio.capture(player, "lute", "valid", 1, 1);
+        studio.capture(player, "lute", "invalid sound", 1, 1);
+        assertFalse(studio.activity(player).recording());
+        assertEquals(1, studio.requireProject(player).pending().notes().size());
+        studio.edit(player, studio.requireProject(player).accept());
+        studio.preview(player, false);
+        when(server.getPlayer(owner)).thenReturn(null);
+        tick.run();
+        assertFalse(studio.activity(player).previewing());
+        studio.record(player, 1);
+        tick.run();
+        studio.close();
+        verify(player, never()).playSound(any(Location.class), eq("valid"), any(SoundCategory.class), anyFloat(), anyFloat());
+    }
+
+    @Test
+    void failedCheckpointAndFinalSaveRetainTheTakeInMemoryForRetry() throws Exception {
+        studio.create(player, "Song", false);
+        CountDownLatch failed = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            if (Thread.currentThread().getName().equals("musical-instruments-checkpoints")) {
+                failed.countDown();
+                throw new IOException("Checkpoint disk full");
+            }
+            return invocation.callRealMethod();
+        }).when(store).save(any());
+        studio.record(player, 1);
+        tick.run(); tick.run();
+        studio.capture(player, "lute", "saved", 1, 1);
+        tick.run(); tick.run();
+        assertTrue(failed.await(3, TimeUnit.SECONDS));
+        // Await completion through the capture's future, then let the clock observe failure.
+        var recordingsField = StudioService.class.getDeclaredField("recordings");
+        recordingsField.setAccessible(true);
+        Object capture = ((java.util.Map<?, ?>) recordingsField.get(studio)).get(owner);
+        var checkpointField = capture.getClass().getDeclaredField("checkpoint");
+        checkpointField.setAccessible(true);
+        assertThrows(java.util.concurrent.CompletionException.class,
+                () -> ((CompletableFuture<?>) checkpointField.get(capture)).join());
+        doThrow(new IOException("Final disk full")).when(store).save(any());
+        tick.run(); tick.run();
+        assertFalse(studio.activity(player).recording());
+        assertEquals("saved", studio.requireProject(player).pending().notes().getFirst().sound());
+        studio.quit(player);
+        assertNotNull(studio.requireProject(player).pending());
+        studio.close();
+        verify(player, atLeastOnce()).sendMessage(contains("Could not read/write"));
+        doCallRealMethod().when(store).save(any());
+    }
+
+    @Test
+    void discsRequireAnOrdinarySingleItemAndCopyRequiresARecordedSource() throws Exception {
+        ItemStack disc = mock(ItemStack.class);
+        var meta = mock(org.bukkit.inventory.meta.ItemMeta.class);
+        var data = mock(org.bukkit.persistence.PersistentDataContainer.class);
+        when(inventory.getItemInMainHand()).thenReturn(disc);
+        when(disc.getItemMeta()).thenReturn(meta);
+        when(meta.getPersistentDataContainer()).thenReturn(data);
+        assertFalse(studio.ordinaryDisc(disc));
+        assertThrows(IllegalArgumentException.class, () -> studio.makeBlank(player));
+        when(discs.musicDisc(disc)).thenReturn(true);
+        when(discs.custom(disc)).thenReturn(true);
+        assertFalse(studio.ordinaryDisc(disc));
+        when(discs.custom(disc)).thenReturn(false);
+        assertFalse(studio.ordinaryDisc(disc));
+        when(data.isEmpty()).thenReturn(true);
+        when(meta.hasCustomModelData()).thenReturn(true);
+        assertFalse(studio.ordinaryDisc(disc));
+        when(meta.hasCustomModelData()).thenReturn(false);
+        assertTrue(studio.ordinaryDisc(disc));
+        when(disc.getAmount()).thenReturn(2);
+        assertThrows(IllegalArgumentException.class, () -> studio.makeBlank(player));
+        when(disc.getAmount()).thenReturn(1);
+        ItemStack blank = mock(ItemStack.class);
+        when(discs.blankDisc()).thenReturn(blank);
+        studio.makeBlank(player);
+        verify(inventory).setItemInMainHand(blank);
+        assertThrows(IllegalArgumentException.class, () -> studio.copy(player));
+        when(discs.blank(disc)).thenReturn(true);
+        when(disc.getAmount()).thenReturn(2);
+        assertThrows(IllegalArgumentException.class, () -> studio.copy(player));
+        when(disc.getAmount()).thenReturn(1);
+        assertThrows(IllegalArgumentException.class, () -> studio.copy(player));
+        when(player.hasPermission("instruments.copy")).thenReturn(true);
+        assertThrows(IllegalArgumentException.class, () -> studio.copyFromInventory(player));
+        when(inventory.getStorageContents()).thenReturn(new ItemStack[]{null, disc});
+        studio.prepareBlankFromInventory(player);
+        verify(inventory).setItem(1, blank);
+        when(discs.musicDisc(disc)).thenReturn(false);
+        assertThrows(IllegalArgumentException.class, () -> studio.prepareBlankFromInventory(player));
+    }
+
+    @Test
+    void jukeboxInsertionRejectsInvalidDiscsOccupiedBoxesAndChangedBlocks() throws Exception {
+        ItemStack disc = mock(ItemStack.class);
+        Song song = song(track(1, "note"));
+        Block block = jukebox(song, disc);
+        when(discs.songId(disc)).thenReturn(null);
+        assertThrows(IllegalArgumentException.class, () -> studio.play(block, disc));
+        when(discs.songId(disc)).thenReturn(song.id());
+        Jukebox box = (Jukebox) block.getState();
+        when(box.update(false, false)).thenReturn(false);
+        assertThrows(IllegalArgumentException.class, () -> studio.play(block, disc));
+        when(box.update(false, false)).thenReturn(true);
+        studio.play(block, disc);
+        assertThrows(IllegalArgumentException.class, () -> studio.play(block, disc));
+        when(server.getWorld(world.getUID())).thenReturn(null);
+        tick.run();
+        verify(player, never()).playSound(any(Location.class), eq("note"), any(SoundCategory.class), anyFloat(), anyFloat());
+        studio.stop(block);
+        when(block.getType()).thenReturn(Material.STONE);
+        when(block.getState()).thenReturn(mock(org.bukkit.block.BlockState.class));
+        studio.stop(block);
+        when(block.getType()).thenReturn(Material.JUKEBOX);
+        studio.stop(block);
+    }
+
+    @Test
+    void newSessionsCanSelectStoredProjectsAndDeleteAnUnselectedProject() throws Exception {
+        Project first = new Project(song(), null, 100, false);
+        Project second = new Project(song(), null, 100, false);
+        store.save(first); store.save(second);
+        assertEquals(first, studio.project(player, first.song().id()));
+        studio.deleteProject(player, first);
+        assertEquals(second, studio.requireProject(player));
+        studio.quit(player);
+        doReturn(java.util.Optional.empty()).when(store).project(owner);
+        studio.selectProject(player, second.song().id());
+        assertEquals(second, studio.requireProject(player));
+        Project third = new Project(song(), null, 100, false);
+        studio.save(player, third);
+        assertEquals(2, studio.listProjects(player).size()); // same title uses deterministic id ordering
+    }
+
+    @Test
+    void copyingFromInventoryReadsImmutableEditionsAndEvictsOldCachedSongs() throws Exception {
+        ItemStack blank = inventoryItem(Material.MUSIC_DISC_13, 1, true);
+        ItemStack source = mock(ItemStack.class);
+        ItemStack copied = mock(ItemStack.class);
+        when(player.hasPermission("instruments.copy")).thenReturn(true);
+        when(inventory.getItemInOffHand()).thenReturn(source);
+        when(inventory.getStorageContents()).thenReturn(new ItemStack[]{blank});
+        when(discs.disc(any())).thenReturn(copied);
+        Song first = null;
+        for (int index = 0; index < 65; index++) {
+            Song edition = song(track(1, "note"));
+            if (index == 0) first = edition;
+            store.publish(edition);
+            when(discs.songId(source)).thenReturn(edition.id());
+            studio.copyFromInventory(player);
+        }
+        assertNotNull(first);
+        when(discs.songId(source)).thenReturn(first.id());
+        studio.copyFromInventory(player);
+        verify(store, times(2)).song(first.id());
+        verify(inventory, times(66)).setItem(0, copied);
+        ItemStack empty = inventoryItem(Material.AIR, 0, true);
+        when(inventory.getStorageContents()).thenReturn(new ItemStack[]{empty});
+        assertThrows(IllegalArgumentException.class, () -> studio.copyFromInventory(player));
+        ItemStack stack = inventoryItem(Material.MUSIC_DISC_13, 2, true);
+        when(stack.clone()).thenReturn(mock(ItemStack.class));
+        ItemStack air = inventoryItem(Material.AIR, 1, false);
+        when(air.getType().isAir()).thenReturn(true);
+        when(inventory.getStorageContents()).thenReturn(new ItemStack[]{stack, air});
+        studio.copyFromInventory(player);
+        verify(inventory).setItem(1, copied);
+    }
+
+    private void configure(StudioSettings settings) {
+        studio.close();
+        studio = new StudioService(plugin, manager, store, settings, StudioStation.none(), discs);
+        var callbacks = ArgumentCaptor.forClass(Runnable.class);
+        verify(plugin.getServer().getScheduler(), times(2)).runTaskTimer(eq(plugin), callbacks.capture(), eq(1L), eq(1L));
+        tick = callbacks.getAllValues().getLast();
+    }
+
+    private void clock(long value) throws Exception {
+        var field = StudioService.class.getDeclaredField("clock"); field.setAccessible(true); field.setLong(studio, value);
+    }
+
+    @Test
+    void simultaneousNoteFloodsAndSongLimitsBoundCapture() throws Exception {
+        configure(new StudioSettings(4, 40, 50, 60, 8, 32, 2, 0, 2));
+        studio.create(player, "Song", false); studio.record(player, 1);
+        tick.run(); tick.run();
+        for (int index = 0; index < 34; index++) studio.capture(player, "lute", "note", 1, 1);
+        assertEquals(32, studio.activity(player).notes());
+        clock(42); studio.capture(player, "lute", "late", 1, 1);
+        assertEquals(32, studio.activity(player).notes());
+        studio.stop(player); studio.edit(player, studio.requireProject(player).accept());
+        studio.record(player, 2); tick.run(); tick.run();
+        for (int index = 0; index < 29; index++) studio.capture(player, "lute", "note", 1, 1);
+        assertFalse(studio.activity(player).recording());
+        assertEquals(28, studio.requireProject(player).pending().notes().size());
+    }
+
+    @Test
+    void sessionCapacityDoesNotInterruptAnExistingPreviewAndPlaybackEndsCleanly() throws Exception {
+        configure(new StudioSettings(4, 40, 20, 60, 1, 32, 2, 0, 2));
+        studio.save(player, new Project(song(track(1, "note")), null, 100, false));
+        studio.preview(player, false);
+        Player second = mock(Player.class);
+        UUID id = UUID.randomUUID(); when(second.getUniqueId()).thenReturn(id);
+        when(second.getName()).thenReturn("Second"); when(second.getInventory()).thenReturn(inventory);
+        studio.create(second, "Other", false);
+        assertThrows(IllegalArgumentException.class, () -> studio.record(second, 1));
+        clock(-2); tick.run(); // a not-yet-due preview emits no samples
+        verify(player, never()).playSound(any(Location.class), eq("note"), any(SoundCategory.class), anyFloat(), anyFloat());
+        for (int index = 0; index < 12; index++) tick.run();
+        assertFalse(studio.activity(player).previewing());
+        studio.record(player, 1);
+        studio.quit(player);
+        assertFalse(studio.activity(player).recording());
+    }
+
+    @Test
+    void jukeboxLifecycleHandlesUnloadedChunksReplacedBlocksAndFuturePlayback() throws Exception {
+        ItemStack disc = mock(ItemStack.class);
+        Block block = jukebox(song(track(1, "note")), disc);
+        Jukebox box = (Jukebox) block.getState();
+        studio.play(block, disc);
+        studio.unload(UUID.randomUUID(), 0, 0); studio.unload(world.getUID(), 1, 0); studio.unload(world.getUID(), 0, 1);
+        clock(-2); tick.run();
+        verify(player, never()).playSound(any(Location.class), eq("note"), any(SoundCategory.class), anyFloat(), anyFloat());
+        clock(0); when(block.getState()).thenReturn(mock(org.bukkit.block.BlockState.class)); tick.run();
+        when(block.getState()).thenReturn(box); studio.play(block, disc);
+        when(world.isChunkLoaded(anyInt(), anyInt())).thenReturn(false); tick.run();
+    }
+
+    @Test
+    void archivedProjectCanBeDeletedWhenTheSelectedFileIsMissing() throws Exception {
+        Project project = new Project(song(), null, 100, false);
+        store.save(project);
+        doReturn(java.util.Optional.empty()).when(store).project(owner);
+        assertEquals(project, studio.project(player, project.song().id()));
+        studio.deleteProject(player, project);
+        assertNull(studio.project(player));
+    }
+
+    @Test
+    void anEmptyCaptureDoesNotQueueCheckpointsAndInvalidDiscsCannotPublish() throws Exception {
+        studio.create(player, "Empty", false); studio.record(player, 1);
+        for (int index = 0; index < 6; index++) tick.run();
+        verify(store, times(1)).save(any());
+        studio.stop(player);
+        assertThrows(IllegalArgumentException.class, () -> studio.publishOnDisc(player, mock(ItemStack.class)));
+    }
+
+    @Test
+    void changedJukeboxStatesAreClearedAndAReplacedRecordStopsThePreviousSong() throws Exception {
+        ItemStack disc = mock(ItemStack.class);
+        Block block = jukebox(song(track(1, "note")), disc);
+        Jukebox box = (Jukebox) block.getState();
+        var replaced = mock(org.bukkit.block.BlockState.class);
+        when(block.getState()).thenReturn(box, replaced, box);
+        studio.play(block, disc);
+        when(box.getRecord()).thenReturn(mock(ItemStack.class));
+        tick.run();
+        verify(player, never()).playSound(any(Location.class), eq("note"), any(SoundCategory.class), anyFloat(), anyFloat());
+    }
 }

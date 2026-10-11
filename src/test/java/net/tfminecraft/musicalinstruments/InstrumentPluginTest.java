@@ -74,6 +74,16 @@ class InstrumentPluginTest {
     }
 
     @Test
+    void shutdownAlsoHandlesStudioInitializationThatDidNotFinish() throws Exception {
+        plugin.onDisable();
+        for (String name : List.of("studioMenu", "studio")) {
+            var field = InstrumentPlugin.class.getDeclaredField(name);
+            field.setAccessible(true); field.set(plugin, null);
+        }
+        plugin.onDisable();
+    }
+
+    @Test
     void loadsInstrumentsOnTheFirstTick() {
         // The bundled instruments need MMOItems, which is not installed, so point one at a vanilla item.
         plugin.getConfig().set("lute.item", "v.note_block");

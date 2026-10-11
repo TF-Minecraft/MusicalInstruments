@@ -230,4 +230,66 @@ class StudioListenerTest {
         listener.station(event(EquipmentSlot.HAND));
         verify(studio).failure(eq(player), any(IOException.class));
     }
+
+    @Test
+    void blankDiscsOccupiedBoxesAndOtherClicksNeverInsertARecording() throws Exception {
+        listener.interact(new PlayerInteractEvent(player, Action.RIGHT_CLICK_BLOCK, disc, null, BlockFace.UP));
+        listener.interact(new PlayerInteractEvent(player, Action.LEFT_CLICK_BLOCK, disc, block, BlockFace.UP));
+        listener.interact(new PlayerInteractEvent(player, Action.RIGHT_CLICK_AIR, disc, null, BlockFace.UP));
+        when(block.getState()).thenReturn(mock(org.bukkit.block.BlockState.class));
+        listener.interact(event(EquipmentSlot.HAND));
+        when(block.getState()).thenReturn(box);
+        when(box.hasRecord()).thenReturn(true);
+        listener.interact(event(EquipmentSlot.HAND));
+        when(box.hasRecord()).thenReturn(false);
+        when(discs.blank(disc)).thenReturn(true);
+        listener.interact(event(EquipmentSlot.HAND));
+        verify(player).sendMessage(contains("This disc is blank"));
+        verify(studio, never()).play(any(), any());
+        when(discs.blank(disc)).thenReturn(false);
+        doThrow(new IllegalArgumentException("Changed jukebox")).when(studio).play(block, disc);
+        listener.interact(event(EquipmentSlot.HAND));
+        verify(player).sendMessage("Changed jukebox");
+    }
+
+    @Test
+    void insertingTheLastDiscClearsTheCorrectHand() throws Exception {
+        ItemStack remaining = mock(ItemStack.class);
+        when(disc.clone()).thenReturn(remaining);
+        when(disc.getAmount()).thenReturn(1);
+        try (var items = mockConstruction(ItemStack.class, (item, context) -> when(item.getType()).thenReturn(Material.AIR))) {
+            listener.interact(event(EquipmentSlot.HAND));
+            listener.interact(event(EquipmentSlot.OFF_HAND));
+            verify(inventory).setItemInMainHand(items.constructed().get(0));
+            verify(inventory).setItemInOffHand(items.constructed().get(1));
+        }
+    }
+
+    @Test
+    void worldLifecycleAndHoppersRespectCustomRecordingPlayback() {
+        listener.breakBlock(new org.bukkit.event.block.BlockBreakEvent(block, player));
+        verify(studio).stop(block);
+        listener.quit(new org.bukkit.event.player.PlayerQuitEvent(player, (net.kyori.adventure.text.Component) null));
+        verify(studio).quit(player);
+        var world = mock(org.bukkit.World.class);
+        when(world.getUID()).thenReturn(java.util.UUID.randomUUID());
+        var chunk = mock(org.bukkit.Chunk.class);
+        when(chunk.getWorld()).thenReturn(world);
+        when(chunk.getX()).thenReturn(2); when(chunk.getZ()).thenReturn(3);
+        listener.unload(new org.bukkit.event.world.ChunkUnloadEvent(chunk));
+        when(world.getLoadedChunks()).thenReturn(new org.bukkit.Chunk[]{chunk});
+        listener.unloadWorld(new org.bukkit.event.world.WorldUnloadEvent(world));
+        verify(studio, times(2)).unload(world.getUID(), 2, 3);
+        var source = mock(org.bukkit.inventory.Inventory.class);
+        var destination = mock(org.bukkit.inventory.Inventory.class);
+        when(destination.getHolder()).thenReturn(box);
+        var blocked = new org.bukkit.event.inventory.InventoryMoveItemEvent(source, disc, destination, true);
+        listener.hopper(blocked); assertTrue(blocked.isCancelled());
+        when(destination.getHolder()).thenReturn(null);
+        var ordinary = new org.bukkit.event.inventory.InventoryMoveItemEvent(source, disc, destination, true);
+        listener.hopper(ordinary); assertFalse(ordinary.isCancelled());
+        when(discs.custom(disc)).thenReturn(false);
+        listener.hopper(ordinary); assertFalse(ordinary.isCancelled());
+    }
+
 }
