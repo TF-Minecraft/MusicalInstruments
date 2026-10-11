@@ -19,6 +19,8 @@ import java.util.UUID;
 
 /** Versioned, bounded data files. A failed write never truncates the last saved project. */
 public final class StudioStore {
+    // Enough for a full 12,000-note song plus a replacement take, including escaped names.
+    static final int MAX_FILE_BYTES = 32_000_000;
     private final Path root;
 
     public StudioStore(Path root) throws IOException {
@@ -139,7 +141,7 @@ public final class StudioStore {
     }
 
     private YamlConfiguration read(Path file) throws IOException {
-        if (Files.size(file) > 8_000_000) {
+        if (Files.size(file) > MAX_FILE_BYTES) {
             throw new IOException("Studio file exceeds the size limit: " + file.getFileName());
         }
         YamlConfiguration yaml = new YamlConfiguration();
@@ -158,9 +160,13 @@ public final class StudioStore {
         if (!replace && Files.exists(file)) {
             throw new IOException("Published editions cannot be overwritten");
         }
+        byte[] contents = yaml.saveToString().getBytes(StandardCharsets.UTF_8);
+        if (contents.length > MAX_FILE_BYTES) {
+            throw new IOException("Studio file exceeds the size limit: " + file.getFileName());
+        }
         Path temp = Files.createTempFile(file.getParent(), "studio-", ".tmp");
         try {
-            Files.writeString(temp, yaml.saveToString(), StandardCharsets.UTF_8);
+            Files.write(temp, contents);
             try {
                 if (replace) {
                     Files.move(temp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);

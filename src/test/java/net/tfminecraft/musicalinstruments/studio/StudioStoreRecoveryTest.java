@@ -16,6 +16,23 @@ import static org.mockito.Mockito.*;
 class StudioStoreRecoveryTest {
     @TempDir Path directory;
 
+    @Test
+    void oversizedSerializationCannotReplaceTheLastSavedFile() throws Exception {
+        StudioStore store = new StudioStore(directory);
+        Project project = project(); store.save(project);
+        Path selected = directory.resolve("projects/" + project.song().owner() + ".yml");
+        byte[] original = Files.readAllBytes(selected);
+        YamlConfiguration oversized = mock(YamlConfiguration.class);
+        when(oversized.saveToString()).thenReturn("x".repeat(StudioStore.MAX_FILE_BYTES + 1));
+        var write = StudioStore.class.getDeclaredMethod("write", Path.class, YamlConfiguration.class, boolean.class);
+        write.setAccessible(true);
+        var failure = assertThrows(java.lang.reflect.InvocationTargetException.class,
+                () -> write.invoke(store, selected, oversized, true));
+        assertInstanceOf(IOException.class, failure.getCause());
+        assertArrayEquals(original, Files.readAllBytes(selected));
+        assertEquals(project, store.project(project.song().owner()).orElseThrow());
+    }
+
     private Project project() {
         return new Project(new Song(UUID.randomUUID(), UUID.randomUUID(), "Author", "Song",
                 List.of(new Track(1, 10, 1, false, List.of(new Note(0, "lute", "note", 1, 1))))), null, 100, false);
@@ -95,7 +112,7 @@ class StudioStoreRecoveryTest {
             }
             yaml.save(file.toFile()); assertThrows(IOException.class, () -> store.song(project.song().id()));
         }
-        Files.writeString(file, " ".repeat(8_000_001));
+        Files.writeString(file, " ".repeat(StudioStore.MAX_FILE_BYTES + 1));
         assertThrows(IOException.class, () -> store.song(project.song().id()));
     }
 

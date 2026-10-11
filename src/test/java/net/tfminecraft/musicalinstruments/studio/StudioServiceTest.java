@@ -19,6 +19,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 import java.io.IOException;
@@ -35,6 +37,204 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class StudioServiceTest {
+    @Test
+    void stoppingPreviewStopsAlreadySentSamples() throws Exception {
+        studio.save(player, new Project(song(track(1, "long_sample")), null, 100, false));
+        studio.preview(player, false);
+        tick.run();
+        verify(player).playSound(any(Location.class), eq("long_sample"), eq(SoundCategory.PLAYERS), anyFloat(), anyFloat());
+        studio.stop(player); awaitSaves();
+        verify(player).stopSound("long_sample", SoundCategory.PLAYERS);
+        verify(player, never()).stopSound(anyString(), eq(SoundCategory.RECORDS));
+    }
+
+    @Test
+    void slowCheckpointDoesNotBlockStopCaller() throws Exception {
+        studio.create(player, "Song", false);
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            if (Thread.currentThread().getName().equals("musical-instruments-checkpoints")) {
+                started.countDown();
+                if (!release.await(5, TimeUnit.SECONDS)) throw new IOException("Checkpoint timed out");
+            }
+            return invocation.callRealMethod();
+        }).when(store).save(any());
+        studio.record(player, 1);
+        tick.run();
+        tick.run();
+        studio.capture(player, "lute", "first", 4, 1);
+        tick.run();
+        tick.run();
+        assertTrue(started.await(3, TimeUnit.SECONDS));
+        CompletableFuture<Void> stopped = CompletableFuture.runAsync(() -> studio.stop(player));
+        try {
+            assertDoesNotThrow(() -> stopped.get(200, TimeUnit.MILLISECONDS),
+                    "The same call runs on the server thread when Stop is clicked");
+        } finally {
+            release.countDown();
+            stopped.get(3, TimeUnit.SECONDS);
+            awaitSaves();
+        }
+    }
+
+    @Test
+    void pendingFinalSaveBlocksConflictingEditsAndSurvivesDisconnect() throws Exception {
+        studio.create(player, "Song", false);
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            if (Thread.currentThread().getName().equals("musical-instruments-checkpoints")) {
+                started.countDown();
+                if (!release.await(3, TimeUnit.SECONDS)) throw new IOException("Save timed out");
+            }
+            return invocation.callRealMethod();
+        }).when(store).save(any());
+        studio.record(player, 1);
+        tick.run(); tick.run();
+        studio.capture(player, "lute", "final", 1, 1);
+        studio.stop(player);
+        assertTrue(started.await(3, TimeUnit.SECONDS));
+        Project finalTake = studio.requireProject(player);
+        try {
+            assertThrows(IllegalArgumentException.class, () -> studio.edit(player, finalTake.accept()));
+            assertThrows(IllegalArgumentException.class, () -> studio.create(player, "Other", false));
+            tick.run(); // An incomplete save never waits on the server clock.
+            studio.quit(player);
+            when(server.getPlayer(owner)).thenReturn(null);
+        } finally {
+            release.countDown();
+            awaitSaves();
+        }
+        assertEquals(finalTake, new StudioStore(directory).project(owner).orElseThrow());
+        when(server.getPlayer(owner)).thenReturn(player);
+        assertEquals(finalTake, studio.requireProject(player));
+        studio.edit(player, finalTake.accept());
+        assertNull(new StudioStore(directory).project(owner).orElseThrow().pending());
+    }
+
+    @Test
+    void completedSaveAllowsImmediateEditsBeforeTheNextClockTick() throws Exception {
+        studio.create(player, "Song", false);
+        studio.record(player, 1);
+        tick.run(); tick.run();
+        studio.capture(player, "lute", "note", 1, 1);
+        studio.stop(player);
+        awaitSaveFutures();
+        studio.edit(player, studio.requireProject(player).accept());
+        assertNull(new StudioStore(directory).project(owner).orElseThrow().pending());
+    }
+
+    @Test
+    void previewRestartAndRecordingStopClearPrivateAudioWithoutStoppingJukeboxes() throws Exception {
+        Song song = song(track(1, "shared_sample"));
+        ItemStack disc = mock(ItemStack.class);
+        Block box = jukebox(song, disc);
+        studio.save(player, new Project(song, null, 100, false));
+        studio.play(box, disc);
+        studio.preview(player, false);
+        tick.run();
+        verify(player).playSound(any(Location.class), eq("shared_sample"), eq(SoundCategory.RECORDS), anyFloat(), anyFloat());
+        verify(player).playSound(any(Location.class), eq("shared_sample"), eq(SoundCategory.PLAYERS), anyFloat(), anyFloat());
+        studio.preview(player, false);
+        verify(player).stopSound("shared_sample", SoundCategory.PLAYERS);
+        tick.run();
+        studio.record(player, 2);
+        verify(player, times(2)).stopSound("shared_sample", SoundCategory.PLAYERS);
+        tick.run(); tick.run();
+        studio.stop(player);
+        verify(player, times(3)).stopSound("shared_sample", SoundCategory.PLAYERS);
+        verify(player, never()).stopSound(anyString(), eq(SoundCategory.RECORDS));
+    }
+
+    @Test
+    void aFailedSaveAfterDisconnectRetainsTheTakeForRetryOnRejoin() throws Exception {
+        studio.create(player, "Song", false);
+        studio.record(player, 1);
+        tick.run(); tick.run();
+        studio.capture(player, "lute", "retained", 1, 1);
+        doThrow(new IOException("Disk full")).when(store).save(any());
+        studio.quit(player);
+        when(server.getPlayer(owner)).thenReturn(null);
+        awaitSaves();
+        when(server.getPlayer(owner)).thenReturn(player);
+        Project retained = studio.requireProject(player);
+        assertEquals("retained", retained.pending().notes().getFirst().sound());
+        doCallRealMethod().when(store).save(any());
+        studio.edit(player, retained.accept());
+        assertEquals("retained", new StudioStore(directory).project(owner).orElseThrow()
+                .song().track(1).notes().getFirst().sound());
+    }
+
+    @Test
+    void shutdownDiscardsDisconnectedPreviewSoundTracking() throws Exception {
+        studio.save(player, new Project(song(track(1, "sample")), null, 100, false));
+        studio.preview(player, false); tick.run();
+        when(server.getPlayer(owner)).thenReturn(null);
+        studio.close();
+        assertEquals("sample", new StudioStore(directory).project(owner).orElseThrow()
+                .song().track(1).notes().getFirst().sound());
+        verify(player, never()).stopSound(anyString(), any(SoundCategory.class));
+    }
+
+    @Test
+    void shutdownRetriesAFailedFinalSaveWhenStorageHasRecovered() throws Exception {
+        studio.create(player, "Song", false);
+        studio.record(player, 1); tick.run(); tick.run();
+        studio.capture(player, "lute", "recovered", 1, 1);
+        doThrow(new IOException("Temporary disk failure")).when(store).save(any());
+        studio.stop(player);
+        awaitSaveFutures(); // The failure has not yet been observed by the musical clock.
+        doCallRealMethod().when(store).save(any());
+        studio.close();
+        assertEquals("recovered", new StudioStore(directory).project(owner).orElseThrow()
+                .pending().notes().getFirst().sound());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void shutdownWaitIsBoundedAndInterruptionPreservesQueuedSaves(boolean interrupted) throws Exception {
+        studio.close();
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor(
+                Thread.ofPlatform().daemon(true).name("musical-instruments-checkpoints").factory());
+        var worker = spy(executor);
+        if (interrupted) doThrow(new InterruptedException("Shutdown interrupted")).when(worker).awaitTermination(5, TimeUnit.SECONDS);
+        else doReturn(false).when(worker).awaitTermination(5, TimeUnit.SECONDS);
+        studio = new StudioService(plugin, manager, store, new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2),
+                StudioStation.none(), discs, worker);
+        var callbacks = ArgumentCaptor.forClass(Runnable.class);
+        verify(server.getScheduler(), times(2)).runTaskTimer(eq(plugin), callbacks.capture(), eq(1L), eq(1L));
+        tick = callbacks.getAllValues().getLast();
+        studio.create(player, "Song", false);
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            if (Thread.currentThread().getName().equals("musical-instruments-checkpoints")) {
+                started.countDown();
+                if (!release.await(3, TimeUnit.SECONDS)) throw new IOException("Save timed out");
+            }
+            return invocation.callRealMethod();
+        }).when(store).save(any());
+        studio.record(player, 1); tick.run(); tick.run();
+        studio.capture(player, "lute", "final", 1, 1);
+        studio.stop(player);
+        assertTrue(started.await(3, TimeUnit.SECONDS));
+        try {
+            studio.close();
+            assertEquals(interrupted, Thread.currentThread().isInterrupted());
+            verify(worker).shutdown();
+            verify(worker).awaitTermination(5, TimeUnit.SECONDS);
+            assertNotNull(studio.requireProject(player).pending());
+        } finally {
+            Thread.interrupted();
+            release.countDown();
+            awaitSaves();
+            assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS));
+        }
+        assertEquals("final", new StudioStore(directory).project(owner).orElseThrow()
+                .pending().notes().getFirst().sound());
+    }
+
     @TempDir Path directory;
     private InstrumentPlugin plugin;
     private Server server;
@@ -90,6 +290,27 @@ class StudioServiceTest {
         studio.close();
     }
 
+    private void awaitSaves() throws Exception {
+        if (awaitSaveFutures()) tick.run();
+    }
+
+    private boolean awaitSaveFutures() throws Exception {
+        var field = StudioService.class.getDeclaredField("pendingSaves");
+        field.setAccessible(true);
+        var pending = (java.util.Map<?, ?>) field.get(studio);
+        if (pending.isEmpty()) return false;
+        for (Object save : List.copyOf(pending.values())) {
+            var accessor = save.getClass().getDeclaredMethod("future");
+            accessor.setAccessible(true);
+            try {
+                ((CompletableFuture<?>) accessor.invoke(save)).get(3, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.ExecutionException expectedFailure) {
+                // The musical clock reports failures and retains the take for retry.
+            }
+        }
+        return true;
+    }
+
     private Song song(Track... tracks) {
         return new Song(UUID.randomUUID(), owner, "Musician", "Song", List.of(tracks));
     }
@@ -107,10 +328,10 @@ class StudioServiceTest {
         tick.run();
         studio.capture(player, "flute", "early", 4, 1);
         tick.run();
-        verify(player).playSound(any(Location.class), eq("backing"), eq(SoundCategory.RECORDS), eq(4f), eq(1f));
+        verify(player).playSound(any(Location.class), eq("backing"), eq(SoundCategory.PLAYERS), eq(4f), eq(1f));
         verify(player, never()).playSound(any(Location.class), eq("old_take"), any(SoundCategory.class), anyFloat(), anyFloat());
         studio.capture(player, "flute", "new_take", 2, 1.5f);
-        studio.stop(player);
+        studio.stop(player); awaitSaves();
         Project pending = studio.requireProject(player);
         assertEquals(original, pending.song());
         assertEquals(1, pending.pending().notes().size());
@@ -124,8 +345,8 @@ class StudioServiceTest {
         studio.save(player, new Project(song(track(1, "lute"), track(2, "flute")), null, 100, false));
         studio.preview(player, false);
         tick.run();
-        verify(player).playSound(any(Location.class), eq("lute"), eq(SoundCategory.RECORDS), eq(4f), eq(1f));
-        verify(player).playSound(any(Location.class), eq("flute"), eq(SoundCategory.RECORDS), eq(4f), eq(1f));
+        verify(player).playSound(any(Location.class), eq("lute"), eq(SoundCategory.PLAYERS), eq(4f), eq(1f));
+        verify(player).playSound(any(Location.class), eq("flute"), eq(SoundCategory.PLAYERS), eq(4f), eq(1f));
         verifyNoInteractions(pluginManager);
     }
 
@@ -153,7 +374,7 @@ class StudioServiceTest {
         studio.record(player, 1);
         assertThrows(IllegalArgumentException.class, () -> studio.selectProject(player, first));
         assertThrows(IllegalArgumentException.class, () -> studio.create(player, "Third", false));
-        studio.stop(player);
+        studio.stop(player); awaitSaves();
         studio.selectProject(player, first);
         assertEquals(first, studio.requireProject(player).song().id());
     }
@@ -163,7 +384,7 @@ class StudioServiceTest {
         studio.save(player, new Project(song(track(1, "solo"), track(2, "other")), null, 100, false));
         studio.previewTrack(player, 1);
         tick.run();
-        verify(player).playSound(any(Location.class), eq("solo"), eq(SoundCategory.RECORDS), anyFloat(), anyFloat());
+        verify(player).playSound(any(Location.class), eq("solo"), eq(SoundCategory.PLAYERS), anyFloat(), anyFloat());
         verify(player, never()).playSound(any(Location.class), eq("other"), any(SoundCategory.class), anyFloat(), anyFloat());
     }
 
@@ -196,7 +417,7 @@ class StudioServiceTest {
         Song original = song(track(1, "saved"));
         studio.save(player, new Project(original, null, 100, false));
         studio.record(player, 1);
-        studio.stop(player);
+        studio.stop(player); awaitSaves();
         assertEquals(original, studio.requireProject(player).song());
         assertNull(studio.requireProject(player).pending());
     }
@@ -226,6 +447,7 @@ class StudioServiceTest {
         CompletableFuture<Void> stopped = CompletableFuture.runAsync(() -> studio.stop(player));
         release.countDown();
         stopped.get(3, TimeUnit.SECONDS);
+        awaitSaves();
         Project saved = new StudioStore(directory).project(owner).orElseThrow();
         assertEquals(List.of("first", "second"), saved.pending().notes().stream().map(Note::sound).toList());
     }
@@ -243,7 +465,7 @@ class StudioServiceTest {
         Project project = studio.requireProject(player);
         assertEquals(original, project.song());
         assertEquals(20, project.pending().notes().size());
-        studio.requireIdle(player);
+        awaitSaves(); studio.requireIdle(player);
     }
 
     @Test
@@ -258,7 +480,7 @@ class StudioServiceTest {
         }
         Project project = studio.requireProject(player);
         assertEquals(40, project.pending().lengthTicks());
-        studio.requireIdle(player);
+        awaitSaves(); studio.requireIdle(player);
         assertEquals(project, store.project(owner).orElseThrow());
     }
 
@@ -271,7 +493,9 @@ class StudioServiceTest {
         when(discs.blank(blank)).thenReturn(true);
         when(discs.disc(any())).thenReturn(mock(ItemStack.class));
         doThrow(new IOException("Disk full")).when(store).publish(any());
-        assertThrows(IOException.class, () -> studio.publish(player));
+        IOException failure = assertThrows(IOException.class, () -> studio.publish(player));
+        studio.failure(player, failure);
+        verify(player).sendMessage(contains("Your disc was preserved"));
         verify(inventory, never()).setItemInMainHand(any());
     }
 
@@ -451,7 +675,7 @@ class StudioServiceTest {
         store.publish(edition);
         studio.deleteProject(player, active);
         assertNull(studio.project(player));
-        studio.quit(player);
+        studio.quit(player); awaitSaves();
         assertTrue(store.project(owner).isEmpty());
         assertEquals(List.of(other), store.projects(owner));
         assertEquals(edition, store.song(edition.id()));
@@ -577,12 +801,12 @@ class StudioServiceTest {
         studio.create(player, "Reset", true);
         Project project = studio.requireProject(player);
         studio.selectProject(player, project.song().id());
-        studio.quit(player);
+        studio.quit(player); awaitSaves();
         assertEquals(project, studio.requireProject(player));
         Project foreign = new Project(new Song(UUID.randomUUID(), UUID.randomUUID(), "Other", "Foreign", List.of()), null, 100, false);
         assertThrows(IllegalArgumentException.class, () -> studio.save(player, foreign));
-        studio.quit(player);
-        studio.quit(player);
+        studio.quit(player); awaitSaves();
+        studio.quit(player); awaitSaves();
     }
 
     @Test
@@ -602,7 +826,7 @@ class StudioServiceTest {
         assertTrue(studio.activity(player).previewing());
         tick.run();
         verify(player).playSound(any(Location.class), eq("pending"), any(SoundCategory.class), anyFloat(), anyFloat());
-        studio.stop(player);
+        studio.stop(player); awaitSaves();
         assertFalse(studio.activity(player).previewing());
         studio.edit(player, project.discard());
         ItemStack disc = mock(ItemStack.class);
@@ -612,7 +836,7 @@ class StudioServiceTest {
         studio.record(player, 1);
         tick.run(); tick.run();
         studio.capture(player, "lute", "replacement", 1, 1);
-        studio.stop(player);
+        studio.stop(player); awaitSaves();
         assertTrue(studio.requireProject(player).pending().muted());
         assertEquals(.5f, studio.requireProject(player).pending().gain());
     }
@@ -627,6 +851,7 @@ class StudioServiceTest {
         studio.capture(player, "lute", "invalid sound", 1, 1);
         assertFalse(studio.activity(player).recording());
         assertEquals(1, studio.requireProject(player).pending().notes().size());
+        awaitSaves();
         studio.edit(player, studio.requireProject(player).accept());
         studio.preview(player, false);
         when(server.getPlayer(owner)).thenReturn(null);
@@ -666,7 +891,7 @@ class StudioServiceTest {
         tick.run(); tick.run();
         assertFalse(studio.activity(player).recording());
         assertEquals("saved", studio.requireProject(player).pending().notes().getFirst().sound());
-        studio.quit(player);
+        studio.quit(player); awaitSaves();
         assertNotNull(studio.requireProject(player).pending());
         studio.close();
         verify(player, atLeastOnce()).sendMessage(contains("Could not read/write"));
@@ -749,6 +974,9 @@ class StudioServiceTest {
         studio.deleteProject(player, first);
         assertEquals(second, studio.requireProject(player));
         studio.quit(player);
+        when(server.getPlayer(owner)).thenReturn(null);
+        awaitSaves();
+        when(server.getPlayer(owner)).thenReturn(player);
         doReturn(java.util.Optional.empty()).when(store).project(owner);
         studio.selectProject(player, second.song().id());
         assertEquals(second, studio.requireProject(player));
@@ -812,7 +1040,7 @@ class StudioServiceTest {
         assertEquals(32, studio.activity(player).notes());
         clock(42); studio.capture(player, "lute", "late", 1, 1);
         assertEquals(32, studio.activity(player).notes());
-        studio.stop(player); studio.edit(player, studio.requireProject(player).accept());
+        studio.stop(player); awaitSaves(); studio.edit(player, studio.requireProject(player).accept());
         studio.record(player, 2); tick.run(); tick.run();
         for (int index = 0; index < 29; index++) studio.capture(player, "lute", "note", 1, 1);
         assertFalse(studio.activity(player).recording());
@@ -834,7 +1062,7 @@ class StudioServiceTest {
         for (int index = 0; index < 12; index++) tick.run();
         assertFalse(studio.activity(player).previewing());
         studio.record(player, 1);
-        studio.quit(player);
+        studio.quit(player); awaitSaves();
         assertFalse(studio.activity(player).recording());
     }
 
@@ -867,7 +1095,7 @@ class StudioServiceTest {
         studio.create(player, "Empty", false); studio.record(player, 1);
         for (int index = 0; index < 6; index++) tick.run();
         verify(store, times(1)).save(any());
-        studio.stop(player);
+        studio.stop(player); awaitSaves();
         assertThrows(IllegalArgumentException.class, () -> studio.publishOnDisc(player, mock(ItemStack.class)));
     }
 

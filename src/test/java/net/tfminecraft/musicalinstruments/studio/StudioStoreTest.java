@@ -12,6 +12,23 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 class StudioStoreTest {
+    @Test
+    void maximumSizeProjectAndReplacementTakeRemainReadable() throws Exception {
+        String instrument = "i".repeat(100);
+        String sound = "s".repeat(200);
+        var notes = java.util.stream.IntStream.range(0, Song.MAX_NOTES)
+                .mapToObj(tick -> new Note(tick, instrument, sound, 4, 1)).toList();
+        Track saved = new Track(1, Song.MAX_TICKS, 1, false, notes);
+        Project project = new Project(new Song(UUID.randomUUID(), UUID.randomUUID(), "Player", "Song", List.of(saved)),
+                saved, 100, false);
+        StudioStore store = new StudioStore(directory);
+        store.save(project);
+        long bytes = Files.size(directory.resolve("projects").resolve(project.song().owner() + ".yml"));
+        assertTrue(bytes > 8_000_000);
+        assertTrue(bytes <= StudioStore.MAX_FILE_BYTES);
+        assertEquals(project, store.project(project.song().owner()).orElseThrow());
+    }
+
     @TempDir Path directory;
 
     private Project project() {

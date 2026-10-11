@@ -29,6 +29,39 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class StudioMenuTest {
+    @Test
+    void keepingTakePreservesLatestTrackMix() throws Exception {
+        Track saved = project.song().track(1);
+        project = new Project(project.song(), saved, 100, false);
+        when(studio.requireProject(player)).thenReturn(project);
+        click(12, ClickType.LEFT);
+        executeClick();
+        var edited = ArgumentCaptor.forClass(Project.class);
+        verify(studio).edit(eq(player), edited.capture());
+        Project mixed = edited.getValue();
+        assertTrue(mixed.song().track(1).muted());
+        assertTrue(mixed.accept().song().track(1).muted(), "Keeping the take should not undo the mute button");
+    }
+
+    @Test
+    void takePreviewAndKeepUseNewVolumeAndCanUnmuteAPreviouslyMutedTrack() throws Exception {
+        Track saved = project.song().track(1).mix(.5f, true);
+        project = new Project(project.song().replace(saved), saved, 100, false);
+        when(studio.requireProject(player)).thenReturn(project);
+        click(12, ClickType.LEFT); executeClick();
+        var edits = ArgumentCaptor.forClass(Project.class);
+        verify(studio).edit(eq(player), edits.capture());
+        Project unmuted = edits.getValue();
+        assertFalse(unmuted.pending().muted());
+        when(studio.requireProject(player)).thenReturn(unmuted);
+        click(11, ClickType.LEFT); executeClick();
+        verify(studio, times(2)).edit(eq(player), edits.capture());
+        Project adjusted = edits.getAllValues().getLast();
+        assertEquals(.75f, adjusted.pending().gain());
+        assertEquals(.75f, adjusted.accept().song().track(1).gain());
+        assertFalse(adjusted.accept().song().track(1).muted());
+    }
+
     private final InstrumentPlugin plugin = mock(InstrumentPlugin.class);
     private final StudioService studio = mock(StudioService.class);
     private final StudioDialogs dialogs = mock(StudioDialogs.class);
