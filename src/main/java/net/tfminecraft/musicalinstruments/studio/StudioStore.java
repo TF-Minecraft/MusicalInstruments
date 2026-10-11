@@ -18,7 +18,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
 
 /** Versioned, bounded data files. A failed write never truncates the last saved project. */
 public final class StudioStore {
@@ -33,12 +35,27 @@ public final class StudioStore {
     // Stands in for the edition ID while hashing, so the ID depends only on the music and its labels.
     private static final UUID CONTENT_ID = new UUID(0, 0);
     private final Path root;
+    private final Logger logger;
     // Owners already moved off the legacy layout. Both the main thread and the checkpoint
     // writer use the store, so the set is also the migration lock.
     private final Set<UUID> migrated = new HashSet<>();
+    // Unreadable files already logged, with the size and time they had then, so each is reported once.
+    private final Map<Path, String> reported = new ConcurrentHashMap<>();
+
+    /** A file whose contents cannot be decoded, unlike a failure to reach the disk. */
+    static final class DamagedFileException extends IOException {
+        DamagedFileException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
 
     public StudioStore(Path root) throws IOException {
+        this(root, Logger.getLogger(StudioStore.class.getName()));
+    }
+
+    public StudioStore(Path root, Logger logger) throws IOException {
         this.root = root;
+        this.logger = logger;
         Files.createDirectories(root.resolve("projects"));
         Files.createDirectories(root.resolve("songs"));
         // A crash between writing and moving leaves a temporary file; it never holds the only copy.
@@ -56,7 +73,14 @@ public final class StudioStore {
         migrate(owner);
         UUID id = selected(owner);
         Path file = id == null ? null : projectFile(owner, id);
-        return file != null && Files.exists(file) ? Optional.of(decodeProject(file, owner, id)) : Optional.empty();
+        if (file == null || !Files.exists(file)) return Optional.empty();
+        try {
+            return Optional.of(decodeProject(file, owner, id));
+        } catch (DamagedFileException ex) {
+            // Without an active project the player can still create or open another one.
+            report(file, ex.getMessage());
+            return Optional.empty();
+        }
     }
 
     public Project project(UUID owner, UUID id) throws IOException {
@@ -85,7 +109,16 @@ public final class StudioStore {
         try {
             return UUID.fromString(Files.size(file) > 64 ? "" : Files.readString(file, StandardCharsets.UTF_8).strip());
         } catch (IllegalArgumentException ex) {
-            throw new IOException("Invalid project selection for " + owner, ex);
+            report(file, "it does not hold a project ID; the next save replaces it");
+            return null;
+        }
+    }
+
+    private void report(Path file, String problem) throws IOException {
+        String stamp = stamp(file);
+        if (!stamp.equals(reported.put(file, stamp))) {
+            logger.warning("Skipping unreadable studio file " + file + ": " + problem
+                    + ". The player's other projects remain available; repair or remove the file.");
         }
     }
 
@@ -100,8 +133,18 @@ public final class StudioStore {
         synchronized (migrated) {
             Path legacy = root.resolve("projects").resolve(owner + ".yml");
             if (migrated.contains(owner)) return;
+            UUID id = null;
             if (Files.exists(legacy)) {
-                UUID id = decodeProject(legacy, owner, null).song().id();
+                try {
+                    id = decodeProject(legacy, owner, null).song().id();
+                } catch (DamagedFileException ex) {
+                    // Kept for an administrator, but out of the way of the player's other projects.
+                    Path aside = legacy.resolveSibling(owner + ".yml.damaged");
+                    Files.move(legacy, aside, StandardCopyOption.REPLACE_EXISTING);
+                    logger.warning("Moved unreadable studio project " + legacy + " to " + aside + ": " + ex.getMessage());
+                }
+            }
+            if (id != null) {
                 Path file = projectFile(owner, id);
                 Files.createDirectories(file.getParent());
                 if (!Files.exists(file) || Files.getLastModifiedTime(file).compareTo(Files.getLastModifiedTime(legacy)) <= 0) {
@@ -135,12 +178,13 @@ public final class StudioStore {
         if (Files.isDirectory(directory)) {
             try (var files = Files.list(directory)) {
                 for (Path file : files.filter(path -> path.getFileName().toString().endsWith(".yml")).toList()) {
+                    String name = file.getFileName().toString();
                     UUID id;
                     try {
-                        String name = file.getFileName().toString();
                         id = UUID.fromString(name.substring(0, name.length() - 4));
                     } catch (IllegalArgumentException ex) {
-                        throw new IOException("Invalid project filename: " + file.getFileName(), ex);
+                        report(file, "its name is not a project ID");
+                        continue;
                     }
                     summarize(id.toString(), file, owner, id, cached, fresh, result);
                 }
@@ -150,11 +194,28 @@ public final class StudioStore {
         return result;
     }
 
+    // One unreadable project must not hide the others, nor stop the player from creating or deleting
+    // projects. It is left on disk, logged and skipped; the index remembers it until the file changes.
     private void summarize(String key, Path file, UUID owner, UUID id, Map<String, List<?>> cached,
                            Map<String, List<?>> fresh, Map<String, ProjectSummary> result) throws IOException {
         String stamp = stamp(file);
-        ProjectSummary summary = decodeSummary(cached.get(key), stamp, id);
-        if (summary == null) summary = ProjectSummary.of(decodeProject(file, owner, id));
+        List<?> entry = cached.get(key);
+        List<?> damaged = List.of(stamp, "unreadable"); // Not a project ID, so never a valid summary.
+        if (damaged.equals(entry)) {
+            report(file, "it could not be read when the library was last listed");
+            fresh.put(key, damaged);
+            return;
+        }
+        ProjectSummary summary = decodeSummary(entry, stamp, id);
+        if (summary == null) {
+            try {
+                summary = ProjectSummary.of(decodeProject(file, owner, id));
+            } catch (DamagedFileException ex) {
+                report(file, ex.getMessage());
+                fresh.put(key, damaged);
+                return;
+            }
+        }
         fresh.put(key, encodeSummary(stamp, summary));
         result.put(key, summary);
     }
@@ -224,7 +285,7 @@ public final class StudioStore {
             Track pending = yaml.isSet("pending") ? decodeTrack(map(yaml.get("pending")), yaml.getInt("format") == FORMAT) : null;
             return new Project(song, pending, yaml.getInt("bpm"), yaml.getBoolean("metronome"));
         } catch (RuntimeException ex) {
-            throw new IOException("Invalid project " + owner, ex);
+            throw new DamagedFileException("Invalid project " + owner, ex);
         }
     }
 
@@ -237,7 +298,7 @@ public final class StudioStore {
             }
             return song;
         } catch (RuntimeException ex) {
-            throw new IOException("Invalid song " + id, ex);
+            throw new DamagedFileException("Invalid song " + id, ex);
         }
     }
 
@@ -283,16 +344,16 @@ public final class StudioStore {
 
     private YamlConfiguration read(Path file) throws IOException {
         if (Files.size(file) > MAX_FILE_BYTES) {
-            throw new IOException("Studio file exceeds the size limit: " + file.getFileName());
+            throw new DamagedFileException("Studio file exceeds the size limit: " + file.getFileName(), null);
         }
         YamlConfiguration yaml = new YamlConfiguration();
         try {
             yaml.loadFromString(Files.readString(file, StandardCharsets.UTF_8));
         } catch (InvalidConfigurationException ex) {
-            throw new IOException("Invalid studio YAML: " + file.getFileName(), ex);
+            throw new DamagedFileException("Invalid studio YAML: " + file.getFileName(), ex);
         }
         if (yaml.getInt("format") < 1 || yaml.getInt("format") > FORMAT) {
-            throw new IOException("Unsupported studio format: " + file.getFileName());
+            throw new DamagedFileException("Unsupported studio format: " + file.getFileName(), null);
         }
         return yaml;
     }

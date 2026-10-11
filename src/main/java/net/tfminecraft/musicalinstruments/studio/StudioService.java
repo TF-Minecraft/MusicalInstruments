@@ -71,7 +71,7 @@ public final class StudioService {
     }
 
     private StudioService(InstrumentPlugin plugin, InstrumentManager manager, YamlConfiguration yaml) throws IOException {
-        this(plugin, manager, new StudioStore(plugin.getDataFolder().toPath().resolve("studio")), StudioSettings.read(yaml),
+        this(plugin, manager, new StudioStore(plugin.getDataFolder().toPath().resolve("studio"), plugin.getLogger()), StudioSettings.read(yaml),
                 StudioStation.parse(yaml.getString("station", ""), plugin.getLogger()), new DiscItems(plugin));
     }
 

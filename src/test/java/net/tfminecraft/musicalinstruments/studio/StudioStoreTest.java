@@ -107,7 +107,7 @@ class StudioStoreTest {
         assertTrue(new StudioStore(directory).project(song.owner()).isEmpty());
         for (String invalid : List.of("not a project", "x".repeat(65))) {
             Files.writeString(folder.resolve(StudioStore.SELECTED), invalid);
-            assertThrows(IOException.class, () -> new StudioStore(directory).project(song.owner()));
+            assertTrue(new StudioStore(directory).project(song.owner()).isEmpty());
         }
     }
 
@@ -201,15 +201,63 @@ class StudioStoreTest {
     }
 
     @Test
-    void corruptionAndUnknownFormatsAreReportedWithoutOverwritingData() throws Exception {
-        StudioStore store = new StudioStore(directory);
+    void unreadableLegacySelectionsAreMovedAsideWithoutLosingTheirData() throws Exception {
         UUID owner = UUID.randomUUID();
         Path file = directory.resolve("projects").resolve(owner + ".yml");
+        Path aside = directory.resolve("projects").resolve(owner + ".yml.damaged");
+        new StudioStore(directory);
         for (String invalid : List.of("format: 3\n", "format: 0\n", "format: 1\ntracks: nonsense\n", "[broken yaml")) {
             Files.writeString(file, invalid);
-            assertThrows(IOException.class, () -> store.project(owner));
-            assertEquals(invalid, Files.readString(file));
+            StudioStore store = new StudioStore(directory);
+            assertTrue(store.project(owner).isEmpty());
+            assertFalse(Files.exists(file));
+            assertEquals(invalid, Files.readString(aside));
+            assertTrue(store.summaries(owner).isEmpty());
         }
+    }
+
+    @Test
+    void unreadableProjectsAreSkippedAndReportedOnceWhileTheRestOfTheLibraryWorks() throws Exception {
+        List<String> warnings = new java.util.ArrayList<>();
+        java.util.logging.Logger logger = java.util.logging.Logger.getAnonymousLogger();
+        logger.setUseParentHandlers(false);
+        logger.addHandler(new java.util.logging.Handler() {
+            @Override public void publish(java.util.logging.LogRecord record) { warnings.add(record.getMessage()); }
+            @Override public void flush() {}
+            @Override public void close() {}
+        });
+        StudioStore store = new StudioStore(directory, logger);
+        Project damaged = project();
+        UUID owner = damaged.song().owner();
+        Project healthy = new Project(new Song(UUID.randomUUID(), owner, "Musician", "Healthy", List.of()), null, 100, false);
+        store.save(damaged);
+        store.save(healthy);
+        Path folder = directory.resolve("projects").resolve(owner.toString());
+        Path broken = folder.resolve(damaged.song().id() + ".yml");
+        Files.writeString(broken, "format: 2\nid: [broken");
+        Files.writeString(folder.resolve("notes.yml"), "not a project");
+        for (int listing = 0; listing < 3; listing++) {
+            StudioStore reader = listing == 2 ? new StudioStore(directory, logger) : store; // The index remembers the damage.
+            assertEquals(List.of(ProjectSummary.of(healthy)), reader.summaries(owner));
+        }
+        assertEquals(4, warnings.size(), String.join("\n", warnings)); // Once per file and store.
+        assertTrue(warnings.getFirst().contains(broken.toString()));
+        assertThrows(IllegalArgumentException.class, () -> store.delete(owner, damaged.song().id()));
+        assertThrows(IOException.class, () -> store.project(owner, damaged.song().id()));
+        // A damaged active project leaves the player without one, so they can create or open another.
+        Files.writeString(folder.resolve(StudioStore.SELECTED), damaged.song().id().toString());
+        assertTrue(store.project(owner).isEmpty());
+        assertEquals(4, warnings.size()); // That file was already reported.
+        store.delete(owner, healthy.song().id());
+        assertTrue(store.summaries(owner).isEmpty());
+        assertEquals("format: 2\nid: [broken", Files.readString(broken));
+        // A selection that is not a project ID is replaced by the next save.
+        Files.writeString(folder.resolve(StudioStore.SELECTED), "garbage");
+        assertTrue(store.project(owner).isEmpty());
+        assertTrue(store.project(owner).isEmpty());
+        assertEquals(5, warnings.size());
+        store.save(healthy);
+        assertEquals(healthy, store.project(owner).orElseThrow());
     }
 
     @Test
@@ -220,7 +268,8 @@ class StudioStoreTest {
         UUID anotherOwner = UUID.randomUUID();
         Files.copy(directory.resolve("projects").resolve(project.song().owner().toString()).resolve(project.song().id() + ".yml"),
                 directory.resolve("projects").resolve(anotherOwner + ".yml"));
-        assertThrows(IOException.class, () -> store.project(anotherOwner));
+        assertTrue(store.project(anotherOwner).isEmpty());
+        assertTrue(Files.exists(directory.resolve("projects").resolve(anotherOwner + ".yml.damaged")));
         Song edition = store.publishEdition(project.song());
         UUID anotherId = UUID.randomUUID();
         Files.copy(directory.resolve("songs").resolve(edition.id() + ".yml"),
@@ -259,15 +308,17 @@ class StudioStoreTest {
     }
 
     @Test
-    void laterSavesDoNotReparseTheSelectedFile() throws Exception {
+    void eachStoreChecksForTheLegacyLayoutOncePerOwner() throws Exception {
         StudioStore store = new StudioStore(directory);
         Project project = project();
         store.save(project);
-        Path selected = directory.resolve("projects").resolve(project.song().owner() + ".yml");
-        Files.writeString(selected, "[broken yaml");
-        assertThrows(IOException.class, () -> new StudioStore(directory).save(project)); // A new store checks once.
+        Path legacy = directory.resolve("projects").resolve(project.song().owner() + ".yml");
+        Files.writeString(legacy, "[broken yaml");
         store.save(project.accept());
-        assertEquals(project.accept(), store.project(project.song().owner()).orElseThrow());
+        assertTrue(Files.exists(legacy));
+        new StudioStore(directory).save(project);
+        assertFalse(Files.exists(legacy));
+        assertEquals(project, store.project(project.song().owner()).orElseThrow());
     }
 
     @Test
@@ -341,6 +392,7 @@ class StudioStoreTest {
         assertThrows(IllegalArgumentException.class, () -> store.project(first.song().owner(), other.song().id()));
         Path copied = directory.resolve("projects").resolve(first.song().owner().toString()).resolve(other.song().id() + ".yml");
         Files.copy(directory.resolve("projects").resolve(other.song().owner().toString()).resolve(other.song().id() + ".yml"), copied);
-        assertThrows(IOException.class, () -> store.summaries(first.song().owner()));
+        assertEquals(List.of(ProjectSummary.of(first)), store.summaries(first.song().owner()));
+        assertThrows(IOException.class, () -> store.project(first.song().owner(), other.song().id()));
     }
 }

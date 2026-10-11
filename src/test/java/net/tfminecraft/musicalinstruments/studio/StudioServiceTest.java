@@ -436,18 +436,21 @@ class StudioServiceTest {
     @Test
     void checkpointsAndShutdownRecoverAnUnacceptedTake() throws Exception {
         studio.create(player, "Song", false);
+        // Wait for the checkpoint to finish rather than polling its file: on Windows, reading a
+        // file can make the writer's replacement of it fail.
+        CountDownLatch checkpointed = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            Object result = invocation.callRealMethod();
+            checkpointed.countDown();
+            return result;
+        }).when(store).save(any());
         studio.record(player, 1);
         tick.run();
         tick.run();
         studio.capture(player, "lute", "first", 4, 1);
         tick.run();
         tick.run();
-        verify(store, timeout(3000).times(2)).save(any());
-        // Mockito observes the call at entry; await the atomically installed file contents.
-        long deadline = System.nanoTime() + 3_000_000_000L;
-        while (store.project(owner).orElseThrow().pending() == null && System.nanoTime() < deadline) {
-            Thread.onSpinWait();
-        }
+        assertTrue(checkpointed.await(3, TimeUnit.SECONDS));
         assertEquals("first", new StudioStore(directory).project(owner).orElseThrow().pending().notes().getFirst().sound());
         studio.capture(player, "lute", "second", 4, 1);
         studio.close();

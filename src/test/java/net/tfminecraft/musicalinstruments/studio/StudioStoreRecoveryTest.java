@@ -59,7 +59,7 @@ class StudioStoreRecoveryTest {
         Files.writeString(folder.resolve("ignore.tmp"), "ignored");
         assertEquals(List.of(ProjectSummary.of(project)), store.summaries(project.song().owner()));
         Files.writeString(folder.resolve("invalid.yml"), "invalid");
-        assertThrows(IOException.class, () -> store.summaries(project.song().owner()));
+        assertEquals(List.of(ProjectSummary.of(project)), store.summaries(project.song().owner()));
         Files.delete(folder.resolve("invalid.yml"));
         UUID wrong = UUID.randomUUID();
         Files.copy(folder.resolve(project.song().id() + ".yml"), folder.resolve(wrong + ".yml"));
