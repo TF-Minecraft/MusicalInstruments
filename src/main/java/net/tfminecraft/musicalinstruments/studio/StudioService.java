@@ -293,13 +293,18 @@ public final class StudioService {
         Project project = requireProject(player);
         Song song = project.song();
         if (pending) {
-            if (project.pending() == null) {
+            Track take = project.pending();
+            if (take == null) {
                 throw new IllegalArgumentException("No take to preview");
             }
-            song = song.replace(project.pending());
+            // The take carries its track's mix, but reviewing it must be audible even on a muted or silent track.
+            song = song.replace(take.mix(take.gain() > 0 ? take.gain() : 1, false));
         }
         if (song.tracks().isEmpty()) {
             throw new IllegalArgumentException("Record and keep a track first");
+        }
+        if (!song.audible()) {
+            throw new IllegalArgumentException("Every saved track is muted or silent. Unmute or raise a track first");
         }
         previewSong(player, song);
         player.sendMessage(pending ? "Previewing the new take with the other tracks." : "Previewing the saved mix.");
@@ -311,7 +316,9 @@ public final class StudioService {
         Track track = song.track(slot);
         if (track == null) throw new IllegalArgumentException("Record and keep this track first");
         if (track.muted()) throw new IllegalArgumentException("Unmute this track to listen to it");
-        previewSong(player, new Song(song.id(), song.owner(), song.author(), song.title(), List.of(track)));
+        Song single = new Song(song.id(), song.owner(), song.author(), song.title(), List.of(track));
+        if (!single.audible()) throw new IllegalArgumentException("Raise this track's volume to listen to it");
+        previewSong(player, single);
         player.sendMessage("Listening to saved track " + slot + ".");
     }
 

@@ -919,6 +919,27 @@ class StudioServiceTest {
     }
 
     @Test
+    void takesOnMutedOrSilentTracksStayAudibleWhileReviewing() throws Exception {
+        Track muted = new Track(1, 10, .5f, true, track(1, "muted").notes());
+        Track silent = new Track(2, 10, 0, false, track(2, "silent").notes());
+        studio.save(player, new Project(song(muted, silent), null, 100, false));
+        assertThrows(IllegalArgumentException.class, () -> studio.preview(player, false));
+        assertThrows(IllegalArgumentException.class, () -> studio.previewTrack(player, 2));
+        assertFalse(studio.activity(player).previewing());
+        for (int slot : new int[] {1, 2}) {
+            Project project = studio.requireProject(player);
+            studio.save(player, new Project(project.song(), track(slot, "take" + slot), 100, false));
+            studio.preview(player, true);
+            tick.run();
+            verify(player).playSound(any(Location.class), eq("take" + slot), eq(SoundCategory.PLAYERS), eq(slot == 1 ? 2f : 4f), anyFloat());
+            verify(player, never()).playSound(any(Location.class), eq("muted"), any(SoundCategory.class), anyFloat(), anyFloat());
+            verify(player, never()).playSound(any(Location.class), eq("silent"), any(SoundCategory.class), anyFloat(), anyFloat());
+            studio.stop(player);
+            studio.save(player, studio.requireProject(player).discard());
+        }
+    }
+
+    @Test
     void invalidSamplesStopCaptureAndDisconnectedPlayersDoNotReceivePlayback() throws Exception {
         studio.capture(player, "lute", "ignored", 1, 1);
         studio.create(player, "Song", false);
