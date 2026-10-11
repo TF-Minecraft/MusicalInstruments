@@ -189,6 +189,51 @@ class StudioServiceTest {
         studio.close();
         assertEquals("recovered", new StudioStore(directory).project(owner).orElseThrow()
                 .pending().notes().getFirst().sound());
+        verify(player, never()).sendMessage(startsWith("Take saved"));
+    }
+
+    @Test
+    void disconnectAndShutdownDoNotRewriteProjectsAlreadyOnDisk() throws Exception {
+        studio.save(player, new Project(song(track(1, "cached")), null, 100, false));
+        clearInvocations(store);
+        studio.quit(player);
+        studio.close();
+        verify(store, never()).save(any());
+        verify(player, never()).sendMessage(startsWith("Take saved"));
+    }
+
+    @Test
+    void disconnectEvictsACurrentProjectSoTheNextVisitReadsItsFiles() throws Exception {
+        studio.save(player, new Project(song(track(1, "before")), null, 100, false));
+        studio.quit(player);
+        new StudioStore(directory).save(new Project(song(track(1, "after")), null, 100, false));
+        assertEquals("after", studio.requireProject(player).song().track(1).notes().getFirst().sound());
+    }
+
+    @Test
+    void disconnectRetriesATakeWhoseSaveFailedWhileOnline() throws Exception {
+        studio.create(player, "Song", false);
+        studio.record(player, 1); tick.run(); tick.run();
+        studio.capture(player, "lute", "retry", 1, 1);
+        doThrow(new IOException("Temporary disk failure")).when(store).save(any());
+        studio.stop(player);
+        awaitSaves();
+        doCallRealMethod().when(store).save(any());
+        studio.quit(player);
+        when(server.getPlayer(owner)).thenReturn(null);
+        awaitSaves();
+        assertEquals("retry", new StudioStore(directory).project(owner).orElseThrow()
+                .pending().notes().getFirst().sound());
+    }
+
+    @Test
+    void onlyAFinishedTakeAnnouncesThatItWasSaved() throws Exception {
+        studio.create(player, "Song", false);
+        studio.record(player, 1); tick.run(); tick.run();
+        studio.capture(player, "lute", "take", 1, 1);
+        studio.stop(player);
+        awaitSaves();
+        verify(player).sendMessage("Take saved: /music preview take, /music keep, or /music discard.");
     }
 
     @ParameterizedTest
