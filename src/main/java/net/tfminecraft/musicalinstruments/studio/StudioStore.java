@@ -122,7 +122,14 @@ public final class StudioStore {
         }
     }
 
-    private void select(UUID owner, UUID id) throws IOException {
+    /** Makes an existing project the owner's active one, without rewriting it. */
+    public void select(UUID owner, UUID id) throws IOException {
+        migrate(owner);
+        if (!Files.exists(projectFile(owner, id))) throw new IllegalArgumentException("That project is no longer available");
+        point(owner, id);
+    }
+
+    private void point(UUID owner, UUID id) throws IOException {
         if (!id.equals(selected(owner))) write(directory(owner).resolve(SELECTED), id.toString().getBytes(StandardCharsets.UTF_8), true);
     }
 
@@ -150,7 +157,7 @@ public final class StudioStore {
                 if (!Files.exists(file) || Files.getLastModifiedTime(file).compareTo(Files.getLastModifiedTime(legacy)) <= 0) {
                     write(file, Files.readAllBytes(legacy), true);
                 }
-                select(owner, id);
+                point(owner, id);
                 Files.delete(legacy);
             }
             migrated.add(owner);
@@ -308,7 +315,7 @@ public final class StudioStore {
         Path file = projectFile(owner, project.song().id());
         Files.createDirectories(file.getParent());
         write(file, encodeProject(project), true);
-        select(owner, project.song().id());
+        point(owner, project.song().id());
         remember(project, file);
     }
 

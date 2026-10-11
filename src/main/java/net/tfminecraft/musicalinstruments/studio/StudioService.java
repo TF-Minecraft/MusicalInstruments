@@ -38,6 +38,8 @@ import java.util.logging.Level;
 /** All capture/playback uses one main-thread clock, including overdub monitoring. */
 public final class StudioService {
     public static final int MAX_PROJECTS = 36;
+    static final long RETRY_TICKS = 1200;
+    static final long SHUTDOWN_WAIT_SECONDS = 30;
     private final InstrumentPlugin plugin;
     private final InstrumentManager manager;
     private final StudioStore store;
@@ -48,8 +50,10 @@ public final class StudioService {
     private final Map<UUID, Capture> recordings = new HashMap<>();
     private final Map<UUID, Preview> previews = new HashMap<>();
     private final Map<UUID, Set<String>> privateSounds = new HashMap<>();
-    private final Map<UUID, PendingSave> pendingSaves = new HashMap<>();
-    // Owners whose cached project is newer than its files: a final take still saving or whose write failed.
+    // Each owner's latest queued write. Every write holds the whole project and the writer runs them
+    // in order, so the latest one alone decides what ends up on disk.
+    private final Map<UUID, CompletableFuture<Void>> pendingSaves = new HashMap<>();
+    // Owners whose cached project is newer than its files: a write is still queued, or the last one failed.
     // Other cached projects match the disk, so disconnects and shutdown need not write them again.
     private final Set<UUID> unsaved = new HashSet<>();
     // Clock tick of each player's last publication, kept only while the cooldown applies.
@@ -144,10 +148,10 @@ public final class StudioService {
     }
 
     public void create(Player player, String title, boolean reset) throws IOException {
-        requireIdle(player);
+        requireSaved(player);
         if (!reset) requireProjectSpace(player);
         Project previous = project(player);
-        if (previous != null) save(player, previous); // Also preserve a take retained after a failed write.
+        persist(player); // A project whose last write failed is written before another replaces it.
         UUID id = reset && previous != null ? previous.song().id() : UUID.randomUUID();
         save(player, new Project(new Song(id, player.getUniqueId(), player.getName(), title, List.of()),
                 null, 100, true));
@@ -167,7 +171,7 @@ public final class StudioService {
 
     /** Deletes the project only if it still matches what the player confirmed. */
     public void deleteProject(Player player, ProjectSummary expected) throws IOException {
-        requireIdle(player);
+        requireSaved(player); // A queued write would bring the deleted project back.
         if (!listProjects(player).contains(expected)) {
             throw new IllegalArgumentException("The project changed. Open the delete confirmation again");
         }
@@ -185,7 +189,7 @@ public final class StudioService {
     public List<ProjectSummary> listProjects(Player player) throws IOException {
         Map<UUID, ProjectSummary> all = new LinkedHashMap<>();
         for (ProjectSummary summary : store.summaries(player.getUniqueId())) all.put(summary.id(), summary);
-        // An uncached project matches its files; a cached one may hold a take that is still saving.
+        // An uncached project matches its files; a cached one may be newer than them.
         Project active = projects.get(player.getUniqueId());
         if (active != null) all.put(active.song().id(), ProjectSummary.of(active));
         return all.values().stream().sorted(ProjectSummary.ORDER).toList();
@@ -194,38 +198,60 @@ public final class StudioService {
     public void selectProject(Player player, UUID id) throws IOException {
         Project current = project(player);
         if (current != null && current.song().id().equals(id)) return;
-        requireIdle(player);
+        requireSaved(player); // The next project is read from its file, which a queued write could still change.
         Project next = store.project(player.getUniqueId(), id);
-        if (current != null) save(player, current);
-        save(player, next);
+        persist(player);
+        store.select(player.getUniqueId(), id); // Both projects already match their files.
+        projects.put(player.getUniqueId(), next);
         stopPreview(player);
     }
 
+    /** Writes the project before it becomes the active one. Used when creating or replacing a project. */
     public void save(Player player, Project project) throws IOException {
-        if (!project.song().owner().equals(player.getUniqueId())) {
-            throw new IllegalArgumentException("This is not your project");
-        }
-        requireIdle(player);
+        requireOwner(player, project);
+        requireSaved(player);
         store.save(project); // Persist successfully before replacing the in-memory version.
         projects.put(player.getUniqueId(), project);
         unsaved.remove(player.getUniqueId());
     }
 
-    public void edit(Player player, Project project) throws IOException {
+    /**
+     * Applies a change to the active project at once and writes it in the background, after any
+     * earlier write. If that write fails, the change stays in memory and is written again.
+     */
+    public void edit(Player player, Project project) {
+        requireOwner(player, project);
         requireIdle(player);
-        save(player, project);
+        projects.put(player.getUniqueId(), project);
+        unsaved.add(player.getUniqueId());
+        queueSave(project);
+    }
+
+    private static void requireOwner(Player player, Project project) {
+        if (!project.song().owner().equals(player.getUniqueId())) {
+            throw new IllegalArgumentException("This is not your project");
+        }
+    }
+
+    // Retries a write that failed. A project with no failed write already matches its files.
+    private void persist(Player player) throws IOException {
+        Project current = projects.get(player.getUniqueId());
+        if (unsaved.contains(player.getUniqueId())) save(player, current);
     }
 
     public void requireIdle(Player player) {
         if (recordings.containsKey(player.getUniqueId())) {
             throw new IllegalArgumentException("Stop the recording with /music stop first");
         }
-        PendingSave pending = pendingSaves.get(player.getUniqueId());
-        if (pending != null) {
-            if (!pending.future().isDone()) {
-                throw new IllegalArgumentException("Your take is still saving. Try again shortly");
-            }
-            completeSave(player.getUniqueId(), pending);
+        CompletableFuture<Void> pending = pendingSaves.get(player.getUniqueId());
+        if (pending != null && pending.isDone()) completeSave(player.getUniqueId(), pending);
+    }
+
+    /** Also requires the project's files to be current, for changes that read or remove them. */
+    public void requireSaved(Player player) {
+        requireIdle(player);
+        if (pendingSaves.containsKey(player.getUniqueId())) {
+            throw new IllegalArgumentException("Your project is still saving. Try again shortly");
         }
     }
 
@@ -531,6 +557,7 @@ public final class StudioService {
     private void tick() {
         clock++;
         completeSaves();
+        if (clock % RETRY_TICKS == 0) retryFailedSaves();
         for (var entry : new ArrayList<>(recordings.entrySet())) {
             Player player = plugin.getServer().getPlayer(entry.getKey());
             if (player == null) {
@@ -569,14 +596,7 @@ public final class StudioService {
                 if (capture.checkpoint.isCompletedExceptionally()) {
                     finish(player, capture, "Checkpoint failed; recording stopped to protect your take");
                 } else if (capture.checkpoint.isDone()) {
-                    Project snapshot = capture.snapshot((int) elapsed);
-                    capture.checkpoint = CompletableFuture.runAsync(() -> {
-                        try {
-                            store.save(snapshot);
-                        } catch (IOException ex) {
-                            throw new CompletionException(ex);
-                        }
-                    }, checkpointWriter);
+                    capture.checkpoint = write(capture.snapshot((int) elapsed));
                 }
             }
         }
@@ -658,42 +678,55 @@ public final class StudioService {
             return;
         }
         Project result = capture.snapshot((int) Math.max(1, Math.min(settings.durationTicks(), clock - capture.start + 1)));
-        // Retain the take in memory even if the disk fails, so /music keep can retry.
+        // The take is kept in memory even if the disk fails; it can be reviewed while it is written.
         projects.put(player.getUniqueId(), result);
         unsaved.add(player.getUniqueId());
-        queueSave(result, true);
-        player.sendMessage(reason + ". Saving take; you can review it when the save finishes.");
+        queueSave(result);
+        player.sendMessage(reason + ". Review the take: /music preview take, then /music keep or /music discard.");
     }
 
-    private void queueSave(Project project, boolean take) {
-        // The shared FIFO worker puts the final snapshot after every older checkpoint.
-        // Main-thread edits are guarded until this write completes, so they cannot be overwritten.
-        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-            try { store.save(project); }
-            catch (IOException ex) { throw new CompletionException(ex); }
+    private void queueSave(Project project) {
+        pendingSaves.put(project.song().owner(), write(project));
+    }
+
+    // The single writer runs writes in the order they were queued, so a final take or an edit
+    // always lands after every older checkpoint and edit of the same project.
+    private CompletableFuture<Void> write(Project project) {
+        return CompletableFuture.runAsync(() -> {
+            try {
+                store.save(project);
+            } catch (IOException ex) {
+                plugin.getLogger().log(Level.SEVERE, "Could not save studio project for " + project.song().owner(), ex);
+                throw new CompletionException(ex);
+            }
         }, checkpointWriter);
-        pendingSaves.put(project.song().owner(), new PendingSave(future, take));
     }
 
-    private void completeSave(UUID owner, PendingSave pending) {
+    private void completeSave(UUID owner, CompletableFuture<Void> pending) {
         pendingSaves.remove(owner);
         Player player = plugin.getServer().getPlayer(owner);
-        try {
-            // Called only after isDone(): this never waits on disk from the musical clock.
-            pending.future().join();
-            // Edits wait for this save, so the cached project now matches its files.
-            unsaved.remove(owner);
-            if (player == null) projects.remove(owner);
-            else if (pending.take()) player.sendMessage("Take saved: /music preview take, /music keep, or /music discard.");
-        } catch (CompletionException ex) {
-            plugin.getLogger().log(Level.SEVERE, "Could not save studio project for " + owner, ex.getCause());
-            if (player != null) player.sendMessage("Could not read/write the recording. Your take is retained in memory; try /music keep again.");
+        if (pending.isCompletedExceptionally()) {
+            // Retried by the next change, every minute, on disconnect and on shutdown.
+            if (player != null) player.sendMessage("Could not save your project. Your changes are kept and will be saved again; "
+                    + "contact a server administrator if this continues.");
+            return;
         }
+        // The latest write holds the cached project, so it now matches its files.
+        unsaved.remove(owner);
+        if (player == null) projects.remove(owner);
     }
 
     private void completeSaves() {
         for (var entry : new ArrayList<>(pendingSaves.entrySet())) {
-            if (entry.getValue().future().isDone()) completeSave(entry.getKey(), entry.getValue());
+            // Only completed writes: this never waits on disk from the musical clock.
+            if (entry.getValue().isDone()) completeSave(entry.getKey(), entry.getValue());
+        }
+    }
+
+    // Queues another write for every cached project whose last write failed.
+    private void retryFailedSaves() {
+        for (UUID owner : unsaved) {
+            if (!pendingSaves.containsKey(owner)) queueSave(projects.get(owner));
         }
     }
 
@@ -705,7 +738,7 @@ public final class StudioService {
         stopPreview(player);
         UUID owner = player.getUniqueId();
         if (pendingSaves.containsKey(owner)) return; // completeSave evicts the project once it is written.
-        if (unsaved.contains(owner)) queueSave(projects.get(owner), false); // Retry a take whose write failed.
+        if (unsaved.contains(owner)) queueSave(projects.get(owner)); // Retry a write that failed.
         else projects.remove(owner); // Its files are current; the next visit reloads it.
     }
 
@@ -721,9 +754,7 @@ public final class StudioService {
                 finish(player, entry.getValue(), "Recording stopped on shutdown");
             }
         }
-        for (var entry : projects.entrySet()) {
-            if (unsaved.contains(entry.getKey()) && !pendingSaves.containsKey(entry.getKey())) queueSave(entry.getValue(), false);
-        }
+        retryFailedSaves();
         for (UUID owner : new ArrayList<>(privateSounds.keySet())) {
             Player player = plugin.getServer().getPlayer(owner);
             if (player != null) stopPreview(player);
@@ -734,7 +765,8 @@ public final class StudioService {
         privateSounds.clear();
         checkpointWriter.shutdown();
         try {
-            if (!checkpointWriter.awaitTermination(5, TimeUnit.SECONDS)) {
+            // Losing a take is worse than a slower shutdown, but a stuck disk must not hang it forever.
+            if (!checkpointWriter.awaitTermination(SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS)) {
                 plugin.getLogger().severe("Studio saves are still pending after the shutdown timeout");
             }
         } catch (InterruptedException ex) {
@@ -748,8 +780,6 @@ public final class StudioService {
         Set<String> sounds = privateSounds.remove(player.getUniqueId());
         if (sounds != null) for (String sound : sounds) player.stopSound(sound, SoundCategory.PLAYERS);
     }
-
-    private record PendingSave(CompletableFuture<Void> future, boolean take) {}
 
     public void failure(Player player, IOException ex) {
         plugin.getLogger().log(Level.SEVERE, "Studio storage operation failed for " + player.getUniqueId(), ex);

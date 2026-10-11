@@ -79,7 +79,7 @@ class StudioServiceTest {
     }
 
     @Test
-    void pendingFinalSaveBlocksConflictingEditsAndSurvivesDisconnect() throws Exception {
+    void editsDuringAPendingTakeSaveApplyAtOnceAndAreWrittenAfterIt() throws Exception {
         studio.create(player, "Song", false);
         CountDownLatch started = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -95,10 +95,13 @@ class StudioServiceTest {
         studio.capture(player, "lute", "final", 1, 1);
         studio.stop(player);
         assertTrue(started.await(3, TimeUnit.SECONDS));
-        Project finalTake = studio.requireProject(player);
+        Project kept = studio.requireProject(player).accept();
         try {
-            assertThrows(IllegalArgumentException.class, () -> studio.edit(player, finalTake.accept()));
+            studio.edit(player, kept); // Does not wait for the take to be written.
+            assertEquals(kept, studio.requireProject(player));
+            // Changes that read or remove project files wait until they are current.
             assertThrows(IllegalArgumentException.class, () -> studio.create(player, "Other", false));
+            assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, ProjectSummary.of(kept)));
             tick.run(); // An incomplete save never waits on the server clock.
             studio.quit(player);
             when(server.getPlayer(owner)).thenReturn(null);
@@ -106,11 +109,10 @@ class StudioServiceTest {
             release.countDown();
             awaitSaves();
         }
-        assertEquals(finalTake, new StudioStore(directory).project(owner).orElseThrow());
+        assertEquals(kept, new StudioStore(directory).project(owner).orElseThrow());
         when(server.getPlayer(owner)).thenReturn(player);
-        assertEquals(finalTake, studio.requireProject(player));
-        studio.edit(player, finalTake.accept());
-        assertNull(new StudioStore(directory).project(owner).orElseThrow().pending());
+        assertEquals(kept, studio.requireProject(player)); // Evicted after the write, then read back.
+        verify(player, never()).sendMessage(startsWith("Could not save"));
     }
 
     @Test
@@ -121,8 +123,8 @@ class StudioServiceTest {
         studio.capture(player, "lute", "note", 1, 1);
         studio.stop(player);
         awaitSaveFutures();
-        studio.edit(player, studio.requireProject(player).accept());
-        assertNull(new StudioStore(directory).project(owner).orElseThrow().pending());
+        studio.create(player, "Next", false);
+        assertEquals("Next", new StudioStore(directory).project(owner).orElseThrow().song().title());
     }
 
     @Test
@@ -162,6 +164,7 @@ class StudioServiceTest {
         assertEquals("retained", retained.pending().notes().getFirst().sound());
         doCallRealMethod().when(store).save(any());
         studio.edit(player, retained.accept());
+        awaitSaves();
         assertEquals("retained", new StudioStore(directory).project(owner).orElseThrow()
                 .song().track(1).notes().getFirst().sound());
     }
@@ -227,13 +230,50 @@ class StudioServiceTest {
     }
 
     @Test
-    void onlyAFinishedTakeAnnouncesThatItWasSaved() throws Exception {
-        studio.create(player, "Song", false);
-        studio.record(player, 1); tick.run(); tick.run();
-        studio.capture(player, "lute", "take", 1, 1);
-        studio.stop(player);
+    void failedEditsAreKeptAndRetriedEveryMinuteUntilTheyAreWritten() throws Exception {
+        Project project = new Project(song(track(1, "note")), null, 100, false);
+        studio.save(player, project);
+        Project renamed = new Project(new Song(project.song().id(), owner, "Musician", "Renamed", project.song().tracks()), null, 100, false);
+        doThrow(new IOException("Disk full")).when(store).save(any());
+        studio.edit(player, renamed);
         awaitSaves();
-        verify(player).sendMessage("Take saved: /music preview take, /music keep, or /music discard.");
+        verify(player).sendMessage(startsWith("Could not save your project"));
+        assertEquals(renamed, studio.requireProject(player));
+        assertEquals(project, new StudioStore(directory).project(owner).orElseThrow());
+        doCallRealMethod().when(store).save(any());
+        clock(StudioService.RETRY_TICKS - 2);
+        tick.run();
+        assertFalse(awaitSaveFutures()); // Not retried before the minute.
+        tick.run();
+        awaitSaves();
+        assertEquals(renamed, new StudioStore(directory).project(owner).orElseThrow());
+        clearInvocations(store);
+        clock(2 * StudioService.RETRY_TICKS - 1);
+        tick.run();
+        verify(store, never()).save(any()); // Nothing left to retry.
+    }
+
+    @Test
+    void switchingProjectsOnlyRewritesTheSelectionUnlessAWriteFailed() throws Exception {
+        Project first = new Project(song(track(1, "first")), null, 100, false);
+        Project second = new Project(song(track(1, "second")), null, 100, false);
+        studio.save(player, first);
+        studio.save(player, second);
+        clearInvocations(store);
+        studio.selectProject(player, first.song().id());
+        verify(store, never()).save(any());
+        assertEquals(first, new StudioStore(directory).project(owner).orElseThrow());
+        Project renamed = new Project(new Song(first.song().id(), owner, "Musician", "Renamed", first.song().tracks()), null, 100, false);
+        doThrow(new IOException("Disk full")).when(store).save(any());
+        studio.edit(player, renamed);
+        awaitSaves();
+        doCallRealMethod().when(store).save(any());
+        studio.selectProject(player, second.song().id());
+        assertEquals(renamed, new StudioStore(directory).project(owner, first.song().id()));
+        assertEquals(second, new StudioStore(directory).project(owner).orElseThrow());
+        doReturn(second).when(store).project(owner, first.song().id()); // The file disappears after it was read.
+        java.nio.file.Files.delete(directory.resolve("projects").resolve(owner.toString()).resolve(first.song().id() + ".yml"));
+        assertThrows(IllegalArgumentException.class, () -> studio.selectProject(player, first.song().id()));
     }
 
     @ParameterizedTest
@@ -243,8 +283,8 @@ class StudioServiceTest {
         var executor = java.util.concurrent.Executors.newSingleThreadExecutor(
                 Thread.ofPlatform().daemon(true).name("musical-instruments-checkpoints").factory());
         var worker = spy(executor);
-        if (interrupted) doThrow(new InterruptedException("Shutdown interrupted")).when(worker).awaitTermination(5, TimeUnit.SECONDS);
-        else doReturn(false).when(worker).awaitTermination(5, TimeUnit.SECONDS);
+        if (interrupted) doThrow(new InterruptedException("Shutdown interrupted")).when(worker).awaitTermination(StudioService.SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS);
+        else doReturn(false).when(worker).awaitTermination(StudioService.SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS);
         studio = new StudioService(plugin, manager, store, new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2, 0),
                 StudioStation.none(), discs, worker);
         var callbacks = ArgumentCaptor.forClass(Runnable.class);
@@ -268,7 +308,7 @@ class StudioServiceTest {
             studio.close();
             assertEquals(interrupted, Thread.currentThread().isInterrupted());
             verify(worker).shutdown();
-            verify(worker).awaitTermination(5, TimeUnit.SECONDS);
+            verify(worker).awaitTermination(StudioService.SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS);
             assertNotNull(studio.requireProject(player).pending());
         } finally {
             Thread.interrupted();
@@ -345,10 +385,8 @@ class StudioServiceTest {
         var pending = (java.util.Map<?, ?>) field.get(studio);
         if (pending.isEmpty()) return false;
         for (Object save : List.copyOf(pending.values())) {
-            var accessor = save.getClass().getDeclaredMethod("future");
-            accessor.setAccessible(true);
             try {
-                ((CompletableFuture<?>) accessor.invoke(save)).get(3, TimeUnit.SECONDS);
+                ((CompletableFuture<?>) save).get(3, TimeUnit.SECONDS);
             } catch (java.util.concurrent.ExecutionException expectedFailure) {
                 // The musical clock reports failures and retains the take for retry.
             }
@@ -766,7 +804,7 @@ class StudioServiceTest {
         studio.save(player, before);
         Song song = before.song();
         Project changed = new Project(new Song(song.id(), owner, song.author(), "Renamed", song.tracks()), null, 100, false);
-        studio.edit(player, changed);
+        studio.edit(player, changed); awaitSaves();
         assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, ProjectSummary.of(before)));
         Project foreign = new Project(new Song(UUID.randomUUID(), UUID.randomUUID(), "Other", "Other", List.of()), null, 100, false);
         assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, ProjectSummary.of(foreign)));
@@ -995,7 +1033,7 @@ class StudioServiceTest {
         studio.quit(player); awaitSaves();
         assertNotNull(studio.requireProject(player).pending());
         studio.close();
-        verify(player, atLeastOnce()).sendMessage(contains("Could not read/write"));
+        verify(player, atLeastOnce()).sendMessage(startsWith("Could not save your project"));
         doCallRealMethod().when(store).save(any());
     }
 
