@@ -56,7 +56,7 @@ public final class StudioCommand implements CommandExecutor, TabCompleter {
                 case "projects" -> {
                     var projects = studio.listProjects(player);
                     if (projects.isEmpty()) player.sendMessage("No projects yet. Open /music studio to create a song.");
-                    for (Project project : projects) player.sendMessage(project.song().title() + " | " + project.song().id());
+                    for (ProjectSummary project : projects) player.sendMessage(project.title() + " | " + project.id());
                 }
                 case "open" -> {
                     need(args, 2, "open <project-id>");

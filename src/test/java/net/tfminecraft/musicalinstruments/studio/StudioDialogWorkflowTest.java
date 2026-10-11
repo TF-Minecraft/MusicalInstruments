@@ -53,7 +53,7 @@ class StudioDialogWorkflowTest {
         });
         project = new Project(new Song(UUID.randomUUID(), player.getUniqueId(), "Author", "Old", List.of()), null, 100, true);
         when(studio.requireProject(player)).thenReturn(project);
-        when(studio.project(player, project.song().id())).thenReturn(project);
+        when(studio.summary(player, project.song().id())).thenReturn(ProjectSummary.of(project));
         StudioStation station = mock(StudioStation.class);
         when(studio.station()).thenReturn(station);
         dialogs = new StudioDialogs(plugin, studio, editor, library);
@@ -136,12 +136,12 @@ class StudioDialogWorkflowTest {
         try (Harness h = new Harness()) {
             dialogs.delete(player, null, project.song().id());
             respond(h, 0, null);
-            verify(studio).deleteProject(player, project);
+            verify(studio).deleteProject(player, ProjectSummary.of(project));
         }
         try (Harness h = new Harness()) {
             dialogs.delete(player, null, project.song().id());
             respond(h, 1, null);
-            verify(studio, times(1)).deleteProject(player, project);
+            verify(studio, times(1)).deleteProject(player, ProjectSummary.of(project));
         }
     }
 

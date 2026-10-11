@@ -107,7 +107,7 @@ class StudioStoreTest {
         Project second = new Project(new Song(UUID.randomUUID(), legacy.song().owner(), "Musician", "Second", List.of()), null, 100, true);
         new StudioStore(directory).save(second);
         StudioStore reopened = new StudioStore(directory);
-        assertEquals(2, reopened.projects(legacy.song().owner()).size());
+        assertEquals(2, reopened.summaries(legacy.song().owner()).size());
         assertEquals(legacy, reopened.project(legacy.song().owner(), legacy.song().id()));
         assertEquals(second, reopened.project(legacy.song().owner()).orElseThrow());
         reopened.save(legacy);
@@ -141,16 +141,76 @@ class StudioStoreTest {
     }
 
     @Test
+    void libraryListingUsesSavedSummariesWithoutReparsingProjects() throws Exception {
+        StudioStore store = new StudioStore(directory);
+        Project project = project();
+        store.save(project);
+        Path file = directory.resolve("projects").resolve(project.song().owner().toString()).resolve(project.song().id() + ".yml");
+        var modified = Files.getLastModifiedTime(file);
+        Files.writeString(file, "x".repeat((int) Files.size(file))); // Same size and time: the index entry still applies.
+        Files.setLastModifiedTime(file, modified);
+        assertEquals(List.of(ProjectSummary.of(project)), new StudioStore(directory).summaries(project.song().owner()));
+    }
+
+    @Test
+    void filesChangedOutsideSaveAndDamagedIndexEntriesAreReparsed() throws Exception {
+        StudioStore store = new StudioStore(directory);
+        Project project = project();
+        UUID owner = project.song().owner();
+        store.save(project);
+        Path folder = directory.resolve("projects").resolve(owner.toString());
+        Path file = folder.resolve(project.song().id() + ".yml");
+        var yaml = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(file.toFile());
+        yaml.set("title", "Edited outside the studio");
+        yaml.save(file.toFile());
+        assertEquals("Edited outside the studio", store.summaries(owner).getFirst().title());
+        Path index = folder.resolve(StudioStore.INDEX);
+        String key = project.song().id().toString();
+        for (int damage = 0; damage < 2; damage++) {
+            var cache = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(index.toFile());
+            var entry = new java.util.ArrayList<Object>(cache.getList(key));
+            if (damage == 0) entry.set(1, UUID.randomUUID().toString()); // Belongs to another file.
+            else entry.subList(1, entry.size()).clear(); // Truncated.
+            cache.set(key, entry);
+            cache.save(index.toFile());
+            assertEquals(project.song().id(), store.summaries(owner).getFirst().id());
+        }
+    }
+
+    @Test
+    void anUnwritableIndexLeavesTheLibraryUsable() throws Exception {
+        StudioStore store = new StudioStore(directory);
+        Project project = project();
+        Path index = directory.resolve("projects").resolve(project.song().owner().toString()).resolve(StudioStore.INDEX);
+        Files.createDirectories(index.resolve("blocked")); // A non-empty directory cannot be replaced by the cache file.
+        store.save(project);
+        assertEquals(List.of(ProjectSummary.of(project)), store.summaries(project.song().owner()));
+    }
+
+    @Test
+    void deletionRemovesALegacySelectionAndRejectsUnknownProjects() throws Exception {
+        StudioStore store = new StudioStore(directory);
+        Project legacy = project();
+        UUID owner = legacy.song().owner();
+        store.save(legacy);
+        Files.delete(directory.resolve("projects").resolve(owner.toString()).resolve(legacy.song().id() + ".yml"));
+        assertThrows(IllegalArgumentException.class, () -> store.delete(owner, UUID.randomUUID()));
+        store.delete(owner, legacy.song().id());
+        assertTrue(store.project(owner).isEmpty());
+        assertTrue(store.summaries(owner).isEmpty());
+    }
+
+    @Test
     void projectLibrariesAndDirectSelectionCannotCrossOwners() throws Exception {
         StudioStore store = new StudioStore(directory);
         Project first = project();
         Project other = project();
         store.save(first);
         store.save(other);
-        assertEquals(List.of(first), store.projects(first.song().owner()));
+        assertEquals(List.of(ProjectSummary.of(first)), store.summaries(first.song().owner()));
         assertThrows(IllegalArgumentException.class, () -> store.project(first.song().owner(), other.song().id()));
         Path copied = directory.resolve("projects").resolve(first.song().owner().toString()).resolve(other.song().id() + ".yml");
         Files.copy(directory.resolve("projects").resolve(other.song().owner().toString()).resolve(other.song().id() + ".yml"), copied);
-        assertThrows(IOException.class, () -> store.projects(first.song().owner()));
+        assertThrows(IOException.class, () -> store.summaries(first.song().owner()));
     }
 }

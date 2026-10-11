@@ -111,7 +111,7 @@ class StudioMenuTest {
         project = new Project(new Song(UUID.randomUUID(), player.getUniqueId(), "Player", "Song", List.of(saved)), pending, 100, false);
         when(studio.project(player)).thenReturn(project);
         when(studio.requireProject(player)).thenReturn(project);
-        when(studio.listProjects(player)).thenReturn(List.of(project));
+        when(studio.listProjects(player)).thenReturn(List.of(ProjectSummary.of(project)));
         when(studio.settings()).thenReturn(new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2));
         when(studio.activity(player)).thenReturn(new StudioService.Activity(0, 0, 0, 0, false));
         StudioIcons icons = mock(StudioIcons.class);
@@ -312,17 +312,18 @@ class StudioMenuTest {
 
     @Test
     void libraryFillsAllThirtySixSlotsAndRightClickRequestsDeletion() throws Exception {
-        List<Project> library = java.util.stream.IntStream.range(0, 36).mapToObj(index ->
+        List<Project> projects = java.util.stream.IntStream.range(0, 36).mapToObj(index ->
                 new Project(new Song(UUID.randomUUID(), player.getUniqueId(), "Player", "Song " + index, List.of()), null, 100, true)).toList();
+        List<ProjectSummary> library = projects.stream().map(ProjectSummary::of).toList();
         when(studio.listProjects(player)).thenReturn(library);
         menu.open(player, station);
         click(9, ClickType.RIGHT);
         executeClick();
-        verify(dialogs).delete(player, new Location(world, 0, 0, 0), library.getFirst().song().id());
-        when(studio.requireProject(player)).thenReturn(library.getLast());
+        verify(dialogs).delete(player, new Location(world, 0, 0, 0), library.getFirst().id());
+        when(studio.requireProject(player)).thenReturn(projects.getLast());
         click(44, ClickType.LEFT);
         executeClick();
-        verify(studio).selectProject(player, library.getLast().song().id());
+        verify(studio).selectProject(player, library.getLast().id());
     }
 
     @Test

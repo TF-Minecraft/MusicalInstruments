@@ -158,33 +158,35 @@ public final class StudioService {
         }
     }
 
-    public Project project(Player player, UUID id) throws IOException {
-        Project current = project(player);
-        return current != null && current.song().id().equals(id) ? current : store.project(player.getUniqueId(), id);
+    public ProjectSummary summary(Player player, UUID id) throws IOException {
+        return listProjects(player).stream().filter(summary -> summary.id().equals(id)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("That project is no longer available"));
     }
 
-    public void deleteProject(Player player, Project expected) throws IOException {
+    /** Deletes the project only if it still matches what the player confirmed. */
+    public void deleteProject(Player player, ProjectSummary expected) throws IOException {
         requireIdle(player);
-        if (!expected.song().owner().equals(player.getUniqueId())) throw new IllegalArgumentException("This is not your project");
-        UUID id = expected.song().id();
-        if (!project(player, id).equals(expected)) throw new IllegalArgumentException("The project changed. Open the delete confirmation again");
-        Project current = project(player);
+        if (!listProjects(player).contains(expected)) {
+            throw new IllegalArgumentException("The project changed. Open the delete confirmation again");
+        }
+        UUID id = expected.id();
         store.delete(player.getUniqueId(), id);
+        Project current = projects.get(player.getUniqueId());
         if (current != null && current.song().id().equals(id)) {
             projects.remove(player.getUniqueId());
             unsaved.remove(player.getUniqueId());
             stopPreview(player);
         }
-        player.sendMessage("Deleted '" + expected.song().title() + "'. Published discs keep their music.");
+        player.sendMessage("Deleted '" + expected.title() + "'. Published discs keep their music.");
     }
 
-    public List<Project> listProjects(Player player) throws IOException {
-        Map<UUID, Project> all = new LinkedHashMap<>();
-        for (Project project : store.projects(player.getUniqueId())) all.put(project.song().id(), project);
-        Project active = project(player);
-        if (active != null) all.put(active.song().id(), active);
-        return all.values().stream().sorted(java.util.Comparator.comparing((Project project) -> project.song().title(),
-                String.CASE_INSENSITIVE_ORDER).thenComparing(project -> project.song().id())).toList();
+    public List<ProjectSummary> listProjects(Player player) throws IOException {
+        Map<UUID, ProjectSummary> all = new LinkedHashMap<>();
+        for (ProjectSummary summary : store.summaries(player.getUniqueId())) all.put(summary.id(), summary);
+        // An uncached project matches its files; a cached one may hold a take that is still saving.
+        Project active = projects.get(player.getUniqueId());
+        if (active != null) all.put(active.song().id(), ProjectSummary.of(active));
+        return all.values().stream().sorted(ProjectSummary.ORDER).toList();
     }
 
     public void selectProject(Player player, UUID id) throws IOException {

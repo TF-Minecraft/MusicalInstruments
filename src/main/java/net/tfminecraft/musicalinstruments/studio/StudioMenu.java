@@ -88,16 +88,16 @@ public final class StudioMenu implements Listener {
     }
 
     private void renderLibrary(Player player, Holder holder) throws IOException {
-        List<Project> projects = studio.listProjects(player);
+        List<ProjectSummary> projects = studio.listProjects(player);
         inventoryItem(holder, 4, Material.BOOKSHELF, "Your songs", NamedTextColor.GOLD,
                 projects.size() + "/36 projects", "Left-click to open a song.", "Right-click to delete a song after confirmation.");
         for (int index = 0; index < Math.min(projects.size(), StudioService.MAX_PROJECTS); index++) {
-            Project project = projects.get(index);
+            ProjectSummary project = projects.get(index);
             int slot = 9 + index;
-            holder.choices.put(slot, project.song().id());
-            inventoryItem(holder, slot, Material.MUSIC_DISC_13, project.song().title(), NamedTextColor.YELLOW,
-                    project.song().tracks().size() + " tracks | " + time(project.song().lengthTicks()),
-                    project.pending() == null ? "No pending take" : "Pending take on track " + project.pending().slot(),
+            holder.choices.put(slot, project.id());
+            inventoryItem(holder, slot, Material.MUSIC_DISC_13, project.title(), NamedTextColor.YELLOW,
+                    project.tracks() + " tracks | " + time(project.lengthTicks()),
+                    project.pendingSlot() == 0 ? "No pending take" : "Pending take on track " + project.pendingSlot(),
                     "Left-click: open this project.", "Right-click: delete with confirmation.");
         }
         if (projects.isEmpty()) inventoryItem(holder, 22, Material.WRITABLE_BOOK, "Your studio is empty", NamedTextColor.GOLD,

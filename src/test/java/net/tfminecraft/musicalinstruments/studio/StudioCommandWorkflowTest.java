@@ -67,7 +67,7 @@ class StudioCommandWorkflowTest {
         verify(studio).selectProject(player, project.song().id());
         run("projects");
         verify(player).sendMessage("No projects yet. Open /music studio to create a song.");
-        when(studio.listProjects(player)).thenReturn(List.of(project));
+        when(studio.listProjects(player)).thenReturn(List.of(ProjectSummary.of(project)));
         run("projects");
         verify(player).sendMessage("Old | " + project.song().id());
     }

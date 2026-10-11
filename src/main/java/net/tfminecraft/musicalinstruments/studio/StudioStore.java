@@ -10,19 +10,23 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /** Versioned, bounded data files. A failed write never truncates the last saved project. */
 public final class StudioStore {
     // Enough for a full 12,000-note song plus a replacement take, including escaped names.
     static final int MAX_FILE_BYTES = 32_000_000;
+    // Not a .yml file, so project listings skip it.
+    static final String INDEX = "library.index";
+    private static final String SELECTED = "selected";
     private final Path root;
     // Owners whose selected file already has its per-project copy. Both the main thread
     // and the checkpoint writer save, so the set is concurrent.
@@ -52,10 +56,39 @@ public final class StudioStore {
                 .orElseThrow(() -> new IllegalArgumentException("That project is no longer available"));
     }
 
-    public List<Project> projects(UUID owner) throws IOException {
-        Map<UUID, Project> result = new LinkedHashMap<>();
-        project(owner).ifPresent(project -> result.put(project.song().id(), project));
+    /** The owner's projects for the library, sorted by title, without loading their notes. */
+    public List<ProjectSummary> summaries(UUID owner) throws IOException {
+        Map<String, ProjectSummary> index = index(owner);
+        ProjectSummary selected = index.remove(SELECTED);
+        Map<UUID, ProjectSummary> result = new LinkedHashMap<>();
+        for (ProjectSummary summary : index.values()) result.put(summary.id(), summary);
+        if (selected != null) result.putIfAbsent(selected.id(), selected); // A legacy project saved only as the selection.
+        return result.values().stream().sorted(ProjectSummary.ORDER).toList();
+    }
+
+    private Path projectFile(UUID owner, UUID id) {
+        return root.resolve("projects").resolve(owner.toString()).resolve(id + ".yml");
+    }
+
+    public void delete(UUID owner, UUID id) throws IOException {
+        Map<String, ProjectSummary> index = index(owner); // Validates identity and ownership of every project file.
+        ProjectSummary selected = index.get(SELECTED);
+        boolean isSelected = selected != null && selected.id().equals(id);
+        if (!index.containsKey(id.toString()) && !isSelected) {
+            throw new IllegalArgumentException("That project is no longer available");
+        }
+        if (isSelected) Files.deleteIfExists(root.resolve("projects").resolve(owner + ".yml"));
+        Files.deleteIfExists(projectFile(owner, id));
+    }
+
+    // Library summaries are cached in one small file per owner, keyed by each project file's size and
+    // modification time, so listing parses only files written outside save(). The cache is rebuilt when
+    // missing, stale or unreadable; concurrent updates may lose an entry, which costs one reparse later.
+    private Map<String, ProjectSummary> index(UUID owner) throws IOException {
         Path directory = root.resolve("projects").resolve(owner.toString());
+        Map<String, List<?>> cached = readIndex(directory);
+        Map<String, List<?>> fresh = new TreeMap<>();
+        Map<String, ProjectSummary> result = new LinkedHashMap<>();
         if (Files.isDirectory(directory)) {
             try (var files = Files.list(directory)) {
                 for (Path file : files.filter(path -> path.getFileName().toString().endsWith(".yml")).toList()) {
@@ -66,26 +99,78 @@ public final class StudioStore {
                     } catch (IllegalArgumentException ex) {
                         throw new IOException("Invalid project filename: " + file.getFileName(), ex);
                     }
-                    Project project = decodeProject(file, owner, id);
-                    result.putIfAbsent(id, project);
+                    summarize(id.toString(), file, owner, id, cached, fresh, result);
                 }
             }
         }
-        return result.values().stream().sorted(Comparator.comparing((Project project) -> project.song().title(),
-                String.CASE_INSENSITIVE_ORDER).thenComparing(project -> project.song().id())).toList();
+        Path selected = root.resolve("projects").resolve(owner + ".yml");
+        if (Files.exists(selected)) summarize(SELECTED, selected, owner, null, cached, fresh, result);
+        if (!fresh.equals(cached)) writeIndex(directory, fresh);
+        return result;
     }
 
-    private Path projectFile(UUID owner, UUID id) {
-        return root.resolve("projects").resolve(owner.toString()).resolve(id + ".yml");
+    private void summarize(String key, Path file, UUID owner, UUID id, Map<String, List<?>> cached,
+                           Map<String, List<?>> fresh, Map<String, ProjectSummary> result) throws IOException {
+        String stamp = stamp(file);
+        ProjectSummary summary = decodeSummary(cached.get(key), stamp, id);
+        if (summary == null) summary = ProjectSummary.of(decodeProject(file, owner, id));
+        fresh.put(key, encodeSummary(stamp, summary));
+        result.put(key, summary);
     }
 
-    public void delete(UUID owner, UUID id) throws IOException {
-        project(owner, id); // Validate identity and ownership before removing any file.
-        Optional<Project> selected = project(owner);
-        if (selected.isPresent() && selected.get().song().id().equals(id)) {
-            Files.deleteIfExists(root.resolve("projects").resolve(owner + ".yml"));
+    // Records a saved project's summary so the next listing need not parse the files just written.
+    private void remember(Project project, Path file, Path selected) throws IOException {
+        Map<String, List<?>> entries = readIndex(file.getParent());
+        ProjectSummary summary = ProjectSummary.of(project);
+        entries.put(summary.id().toString(), encodeSummary(stamp(file), summary));
+        entries.put(SELECTED, encodeSummary(stamp(selected), summary));
+        writeIndex(file.getParent(), entries);
+    }
+
+    private static String stamp(Path file) throws IOException {
+        return Files.size(file) + ":" + Files.getLastModifiedTime(file).to(TimeUnit.MICROSECONDS);
+    }
+
+    private static List<?> encodeSummary(String stamp, ProjectSummary summary) {
+        return List.of(stamp, summary.id().toString(), summary.title(), summary.tracks(), summary.lengthTicks(),
+                summary.pendingSlot());
+    }
+
+    private ProjectSummary decodeSummary(List<?> entry, String stamp, UUID id) {
+        if (entry == null) return null;
+        try {
+            if (!stamp.equals(entry.getFirst())) return null;
+            ProjectSummary summary = new ProjectSummary(UUID.fromString((String) entry.get(1)), (String) entry.get(2),
+                    integer(entry.get(3)), integer(entry.get(4)), integer(entry.get(5)));
+            return id == null || summary.id().equals(id) ? summary : null;
+        } catch (RuntimeException ex) {
+            return null; // A malformed entry is rebuilt from its project file.
         }
-        Files.deleteIfExists(projectFile(owner, id));
+    }
+
+    private Map<String, List<?>> readIndex(Path directory) {
+        Map<String, List<?>> entries = new TreeMap<>();
+        try {
+            YamlConfiguration yaml = read(directory.resolve(INDEX));
+            for (String key : yaml.getKeys(false)) {
+                if (yaml.get(key) instanceof List<?> entry) entries.put(key, entry);
+            }
+        } catch (IOException ex) {
+            // A missing or unreadable cache is rebuilt from the project files.
+        }
+        return entries;
+    }
+
+    private void writeIndex(Path directory, Map<String, List<?>> entries) {
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("format", 1);
+        entries.forEach(yaml::set);
+        try {
+            Files.createDirectories(directory);
+            write(directory.resolve(INDEX), yaml, true);
+        } catch (IOException ex) {
+            // The cache is optional: listing still works and retries the write next time.
+        }
     }
 
     private Project decodeProject(Path file, UUID owner, UUID id) throws IOException {
@@ -128,9 +213,11 @@ public final class StudioStore {
             if (!Files.exists(previousFile)) write(previousFile, encodeProject(previous), true);
         }
         YamlConfiguration yaml = encodeProject(project);
-        write(projectFile(owner, project.song().id()), yaml, true);
+        Path file = projectFile(owner, project.song().id());
+        write(file, yaml, true);
         write(selectedFile, yaml, true);
         archived.add(owner);
+        remember(project, file, selectedFile);
     }
 
     private YamlConfiguration encodeProject(Project project) {

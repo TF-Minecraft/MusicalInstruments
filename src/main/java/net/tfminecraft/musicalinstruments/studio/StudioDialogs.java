@@ -117,11 +117,11 @@ public final class StudioDialogs {
 
     public void delete(Player player, Location station, UUID id) throws IOException {
         studio.requireIdle(player);
-        Project project = studio.project(player, id);
+        ProjectSummary project = studio.summary(player, id);
         AtomicBoolean used = new AtomicBoolean();
         Dialog dialog = Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Delete this song?", NamedTextColor.RED))
-                        .body(List.of(DialogBody.plainMessage(Component.text("Delete '" + project.song().title()
+                        .body(List.of(DialogBody.plainMessage(Component.text("Delete '" + project.title()
                                 + "' and its editable tracks and pending take? Other projects and published discs are kept."))))
                         .canCloseWithEscape(true).build())
                 .type(DialogType.confirmation(

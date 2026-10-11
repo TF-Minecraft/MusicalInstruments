@@ -57,7 +57,7 @@ class StudioStoreRecoveryTest {
         assertEquals("Original", store.project(original.song().owner(), original.song().id()).song().title());
         assertThrows(IllegalArgumentException.class, () -> store.project(original.song().owner(), UUID.randomUUID()));
         store.delete(original.song().owner(), original.song().id());
-        assertTrue(store.projects(original.song().owner()).isEmpty());
+        assertTrue(store.summaries(original.song().owner()).isEmpty());
     }
 
     @Test
@@ -66,9 +66,9 @@ class StudioStoreRecoveryTest {
         Project project = project(); store.save(project);
         Path folder = directory.resolve("projects/" + project.song().owner());
         Files.writeString(folder.resolve("ignore.tmp"), "ignored");
-        assertEquals(List.of(project), store.projects(project.song().owner()));
+        assertEquals(List.of(ProjectSummary.of(project)), store.summaries(project.song().owner()));
         Files.writeString(folder.resolve("invalid.yml"), "invalid");
-        assertThrows(IOException.class, () -> store.projects(project.song().owner()));
+        assertThrows(IOException.class, () -> store.summaries(project.song().owner()));
         Files.delete(folder.resolve("invalid.yml"));
         UUID wrong = UUID.randomUUID();
         Files.copy(folder.resolve(project.song().id() + ".yml"), folder.resolve(wrong + ".yml"));
@@ -82,12 +82,12 @@ class StudioStoreRecoveryTest {
         Song song = first.song();
         Project second = new Project(new Song(UUID.randomUUID(), song.owner(), song.author(), song.title(), song.tracks()), null, 100, false);
         store.save(first); store.save(second);
-        assertEquals(2, store.projects(song.owner()).size());
+        assertEquals(2, store.summaries(song.owner()).size());
         store.delete(song.owner(), first.song().id());
         assertEquals(second, store.project(song.owner()).orElseThrow());
         Files.delete(directory.resolve("projects/" + song.owner() + ".yml"));
         store.delete(song.owner(), second.song().id());
-        assertTrue(store.projects(song.owner()).isEmpty());
+        assertTrue(store.summaries(song.owner()).isEmpty());
     }
 
     @Test
