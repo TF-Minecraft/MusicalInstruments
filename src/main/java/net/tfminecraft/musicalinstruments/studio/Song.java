@@ -58,8 +58,4 @@ public record Song(UUID id, UUID owner, String author, String title, List<Track>
     public Song remove(int slot) {
         return new Song(id, owner, author, title, tracks.stream().filter(t -> t.slot() != slot).toList());
     }
-
-    public Song edition() {
-        return new Song(UUID.randomUUID(), owner, author, title, tracks);
-    }
 }

@@ -112,7 +112,7 @@ class StudioMenuTest {
         when(studio.project(player)).thenReturn(project);
         when(studio.requireProject(player)).thenReturn(project);
         when(studio.listProjects(player)).thenReturn(List.of(ProjectSummary.of(project)));
-        when(studio.settings()).thenReturn(new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2));
+        when(studio.settings()).thenReturn(new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2, 0));
         when(studio.activity(player)).thenReturn(new StudioService.Activity(0, 0, 0, 0, false));
         StudioIcons icons = mock(StudioIcons.class);
         when(icons.item(any(), any(), anyList())).thenReturn(mock(ItemStack.class));
@@ -301,7 +301,7 @@ class StudioMenuTest {
 
     @Test
     void tracksFiveToEightHaveTheirOwnPageAndPreserveTrackNumbers() throws Exception {
-        when(studio.settings()).thenReturn(new StudioSettings(8, 40, 20, 60, 8, 32, 2, 0, 2));
+        when(studio.settings()).thenReturn(new StudioSettings(8, 40, 20, 60, 8, 32, 2, 0, 2, 0));
         menu.openProject(player, station);
         click(53, ClickType.LEFT);
         executeClick();
@@ -432,7 +432,7 @@ class StudioMenuTest {
         Track muted = project.song().track(1).mix(.5f, true);
         project = new Project(project.song().replace(muted), null, 100, true);
         when(studio.requireProject(player)).thenReturn(project);
-        when(studio.settings()).thenReturn(new StudioSettings(2, 40, 20, 60, 8, 32, 2, 0, 2));
+        when(studio.settings()).thenReturn(new StudioSettings(2, 40, 20, 60, 8, 32, 2, 0, 2, 0));
         when(studio.activity(player)).thenReturn(new StudioService.Activity(1, 2, 1, 0, false));
         menu.openProject(player, station);
         when(studio.activity(player)).thenReturn(new StudioService.Activity(0, 0, 0, 0, true));
@@ -474,7 +474,7 @@ class StudioMenuTest {
         click(9, ClickType.LEFT); executeClick();
         click(0, ClickType.LEFT); executeClick();
         for (int raw : new int[]{9, 17, 46, 45, 53, 49}) { click(raw, ClickType.LEFT); executeClick(); }
-        when(studio.settings()).thenReturn(new StudioSettings(2, 40, 20, 60, 8, 32, 2, 0, 2));
+        when(studio.settings()).thenReturn(new StudioSettings(2, 40, 20, 60, 8, 32, 2, 0, 2, 0));
         click(28, ClickType.LEFT); executeClick();
         verify(studio, never()).record(any(), anyInt());
     }
@@ -501,7 +501,7 @@ class StudioMenuTest {
 
     @Test
     void trackPagingReturnsToThePreviousFourTracks() throws Exception {
-        when(studio.settings()).thenReturn(new StudioSettings(8, 40, 20, 60, 8, 32, 2, 0, 2));
+        when(studio.settings()).thenReturn(new StudioSettings(8, 40, 20, 60, 8, 32, 2, 0, 2, 0));
         menu.openProject(player, station);
         click(53, ClickType.LEFT); executeClick();
         click(45, ClickType.LEFT); executeClick();

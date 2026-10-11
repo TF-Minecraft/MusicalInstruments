@@ -48,12 +48,30 @@ class StudioStoreTest {
     void publishedEditionRemainsImmutableAfterProjectChanges() throws Exception {
         StudioStore store = new StudioStore(directory);
         Project project = project();
-        Song edition = project.song().edition();
-        store.publish(edition);
+        Song edition = store.publishEdition(project.song());
+        assertNotEquals(project.song().id(), edition.id());
         store.save(project.accept());
         assertEquals(edition, new StudioStore(directory).song(edition.id()));
         assertThrows(IOException.class, () -> store.publish(edition));
         assertEquals(edition, store.song(edition.id()));
+    }
+
+    @Test
+    void republishingUnchangedMusicReusesItsEditionWithoutAnotherFile() throws Exception {
+        StudioStore store = new StudioStore(directory);
+        Project project = project();
+        Song edition = store.publishEdition(project.song());
+        Song renamed = new Song(project.song().id(), project.song().owner(), "Musician", "Renamed", project.song().tracks());
+        assertEquals(edition, store.publishEdition(project.song()));
+        assertNotEquals(edition.id(), store.publishEdition(renamed).id());
+        try (var files = Files.list(directory.resolve("songs"))) {
+            assertEquals(2, files.count());
+        }
+        Path file = directory.resolve("songs").resolve(edition.id() + ".yml");
+        var yaml = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(file.toFile());
+        yaml.set("title", "Tampered");
+        yaml.save(file.toFile());
+        assertThrows(IOException.class, () -> store.publishEdition(project.song()));
     }
 
     @Test
@@ -89,8 +107,7 @@ class StudioStoreTest {
         Files.copy(directory.resolve("projects").resolve(project.song().owner() + ".yml"),
                 directory.resolve("projects").resolve(anotherOwner + ".yml"));
         assertThrows(IOException.class, () -> store.project(anotherOwner));
-        Song edition = project.song().edition();
-        store.publish(edition);
+        Song edition = store.publishEdition(project.song());
         UUID anotherId = UUID.randomUUID();
         Files.copy(directory.resolve("songs").resolve(edition.id() + ".yml"),
                 directory.resolve("songs").resolve(anotherId + ".yml"));

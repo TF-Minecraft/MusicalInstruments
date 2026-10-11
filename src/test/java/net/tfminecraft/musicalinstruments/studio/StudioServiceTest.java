@@ -245,7 +245,7 @@ class StudioServiceTest {
         var worker = spy(executor);
         if (interrupted) doThrow(new InterruptedException("Shutdown interrupted")).when(worker).awaitTermination(5, TimeUnit.SECONDS);
         else doReturn(false).when(worker).awaitTermination(5, TimeUnit.SECONDS);
-        studio = new StudioService(plugin, manager, store, new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2),
+        studio = new StudioService(plugin, manager, store, new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2, 0),
                 StudioStation.none(), discs, worker);
         var callbacks = ArgumentCaptor.forClass(Runnable.class);
         verify(server.getScheduler(), times(2)).runTaskTimer(eq(plugin), callbacks.capture(), eq(1L), eq(1L));
@@ -323,7 +323,7 @@ class StudioServiceTest {
         when(world.isChunkLoaded(anyInt(), anyInt())).thenReturn(true);
         when(world.getPlayers()).thenReturn(List.of(player));
         when(scheduler.runTaskTimer(eq(plugin), any(Runnable.class), eq(1L), eq(1L))).thenReturn(task);
-        studio = new StudioService(plugin, manager, store, new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2),
+        studio = new StudioService(plugin, manager, store, new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2, 0),
                 StudioStation.none(), discs);
         var callback = ArgumentCaptor.forClass(Runnable.class);
         verify(scheduler).runTaskTimer(eq(plugin), callback.capture(), eq(1L), eq(1L));
@@ -544,6 +544,22 @@ class StudioServiceTest {
         verify(inventory, never()).setItemInMainHand(any());
     }
 
+    @Test
+    void publicationCooldownLimitsHowOftenEditionsCanBeWritten() throws Exception {
+        configure(new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2, 40));
+        studio.save(player, new Project(song(track(1, "note")), null, 100, false));
+        ItemStack disc = mock(ItemStack.class);
+        when(discs.musicDisc(disc)).thenReturn(true);
+        when(disc.getAmount()).thenReturn(1);
+        when(discs.disc(any(Song.class), eq(disc))).thenReturn(disc);
+        studio.publishOnDisc(player, disc);
+        var wait = assertThrows(IllegalArgumentException.class, () -> studio.publishOnDisc(player, disc));
+        assertEquals("Wait 2 seconds before publishing again", wait.getMessage());
+        for (int elapsed = 0; elapsed < 40; elapsed++) tick.run();
+        studio.publishOnDisc(player, disc);
+        verify(store, times(1)).publish(any()); // Unchanged music reuses the first edition.
+    }
+
     private ItemStack inventoryItem(Material type, int amount, boolean blank) {
         ItemStack item = mock(ItemStack.class);
         Material material = mock(Material.class);
@@ -716,8 +732,7 @@ class StudioServiceTest {
         Project other = studio.requireProject(player);
         Project active = new Project(song(track(1, "note")), null, 100, false);
         studio.save(player, active);
-        Song edition = active.song().edition();
-        store.publish(edition);
+        Song edition = store.publishEdition(active.song());
         studio.deleteProject(player, ProjectSummary.of(active));
         assertNull(studio.project(player));
         studio.quit(player); awaitSaves();
@@ -1079,7 +1094,7 @@ class StudioServiceTest {
 
     @Test
     void simultaneousNoteFloodsAndSongLimitsBoundCapture() throws Exception {
-        configure(new StudioSettings(4, 40, 50, 60, 8, 32, 2, 0, 2));
+        configure(new StudioSettings(4, 40, 50, 60, 8, 32, 2, 0, 2, 0));
         studio.create(player, "Song", false); studio.record(player, 1);
         tick.run(); tick.run();
         for (int index = 0; index < 34; index++) studio.capture(player, "lute", "note", 1, 1);
@@ -1095,7 +1110,7 @@ class StudioServiceTest {
 
     @Test
     void sessionCapacityDoesNotInterruptAnExistingPreviewAndPlaybackEndsCleanly() throws Exception {
-        configure(new StudioSettings(4, 40, 20, 60, 1, 32, 2, 0, 2));
+        configure(new StudioSettings(4, 40, 20, 60, 1, 32, 2, 0, 2, 0));
         studio.save(player, new Project(song(track(1, "note")), null, 100, false));
         studio.preview(player, false);
         Player second = mock(Player.class);

@@ -25,7 +25,7 @@ class StudioCommandWorkflowTest {
     @BeforeEach
     void setup() throws Exception {
         when(player.hasPermission("instruments.record")).thenReturn(true);
-        when(studio.settings()).thenReturn(new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 20));
+        when(studio.settings()).thenReturn(new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 20, 0));
         var first = new Track(1, 20, 1, false, List.of(new Note(0, "lute", "sample", 1, 1)));
         var second = new Track(2, 20, 1, true, first.notes());
         project = new Project(new Song(UUID.randomUUID(), UUID.randomUUID(), "Author", "Old", List.of(first, second)),

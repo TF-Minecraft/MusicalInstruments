@@ -27,6 +27,8 @@ public final class StudioStore {
     // Not a .yml file, so project listings skip it.
     static final String INDEX = "library.index";
     private static final String SELECTED = "selected";
+    // Stands in for the edition ID while hashing, so the ID depends only on the music and its labels.
+    private static final UUID CONTENT_ID = new UUID(0, 0);
     private final Path root;
     // Owners whose selected file already has its per-project copy. Both the main thread
     // and the checkpoint writer save, so the set is concurrent.
@@ -232,6 +234,22 @@ public final class StudioStore {
 
     public void publish(Song song) throws IOException {
         write(root.resolve("songs").resolve(song.id() + ".yml"), encodeSong(song), false);
+    }
+
+    /**
+     * Publishes an immutable edition of the song. Editions are named after their content, so
+     * republishing an unchanged mix returns the earlier edition instead of adding another file.
+     */
+    public Song publishEdition(Song song) throws IOException {
+        String content = encodeSong(new Song(CONTENT_ID, song.owner(), song.author(), song.title(), song.tracks())).saveToString();
+        UUID id = UUID.nameUUIDFromBytes(content.getBytes(StandardCharsets.UTF_8));
+        Song edition = new Song(id, song.owner(), song.author(), song.title(), song.tracks());
+        if (Files.exists(root.resolve("songs").resolve(id + ".yml"))) {
+            if (!song(id).equals(edition)) throw new IOException("Published edition does not match its content: " + id);
+            return edition;
+        }
+        publish(edition);
+        return edition;
     }
 
     private YamlConfiguration read(Path file) throws IOException {

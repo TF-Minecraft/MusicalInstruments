@@ -51,16 +51,14 @@ class StudioModelTest {
     }
 
     @Test
-    void acceptingOrDiscardingATakePreservesPublishedEditions() {
+    void acceptingOrDiscardingATakeLeavesTheOriginalSongUnchanged() {
         Song original = song(new Track(1, 100, 1, false, List.of(note(0, "original"))));
-        Song edition = original.edition();
         Track replacement = new Track(1, 50, 0.5f, false, List.of(note(20, "replacement")));
         Project project = new Project(original, replacement, 100, true);
         assertEquals("original", project.discard().song().track(1).notes().getFirst().sound());
         assertEquals("replacement", project.accept().song().track(1).notes().getFirst().sound());
         assertEquals(50, project.accept().song().lengthTicks());
-        assertEquals("original", edition.track(1).notes().getFirst().sound());
-        assertNotEquals(original.id(), edition.id());
+        assertEquals("original", original.track(1).notes().getFirst().sound());
         assertNull(project.accept().pending());
     }
 

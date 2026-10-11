@@ -11,6 +11,9 @@ sample-tail-seconds: 3
 # Background checkpoints run at this interval. A hard crash loses work since
 # the last completed checkpoint; stop/disconnect/shutdown save the complete take.
 checkpoint-ticks: 200
+# Minimum wait between a player's publications. Published editions are kept forever
+# because discs reference them; republishing unchanged music reuses its edition. 0 disables.
+publish-cooldown-seconds: 30
 # Right-clicking this block or furniture opens the studio (permission instruments.record).
 #   v.<material>        vanilla block, e.g. v.loom (a jukebox cannot be used: it plays recorded discs)
 #   ia.<namespace:id>   ItemsAdder custom block or furniture, e.g. ia.tfmc:music_station

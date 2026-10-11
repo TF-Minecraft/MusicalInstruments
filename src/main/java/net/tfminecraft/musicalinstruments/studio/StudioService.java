@@ -52,6 +52,8 @@ public final class StudioService {
     // Owners whose cached project is newer than its files: a final take still saving or whose write failed.
     // Other cached projects match the disk, so disconnects and shutdown need not write them again.
     private final Set<UUID> unsaved = new HashSet<>();
+    // Clock tick of each player's last publication, kept only while the cooldown applies.
+    private final Map<UUID, Long> lastPublished = new HashMap<>();
     private final Map<BlockKey, Playback> jukeboxes = new HashMap<>();
     private final Map<UUID, Song> editions = new LinkedHashMap<>(16, 0.75f, true) {
         @Override
@@ -367,8 +369,15 @@ public final class StudioService {
         if (!project.song().audible()) {
             throw new IllegalArgumentException("The mix needs at least one audible note");
         }
-        Song edition = project.song().edition();
-        store.publish(edition); // No item is consumed when publication fails.
+        // Each publication of changed music adds a file that discs may reference forever.
+        lastPublished.values().removeIf(at -> clock - at >= settings.publishCooldownTicks());
+        Long last = lastPublished.get(player.getUniqueId());
+        if (last != null) {
+            long seconds = (last + settings.publishCooldownTicks() - clock + 19) / 20;
+            throw new IllegalArgumentException("Wait " + seconds + " seconds before publishing again");
+        }
+        Song edition = store.publishEdition(project.song()); // No item is consumed when publication fails.
+        lastPublished.put(player.getUniqueId(), clock);
         editions.put(edition.id(), edition);
         return edition;
     }
