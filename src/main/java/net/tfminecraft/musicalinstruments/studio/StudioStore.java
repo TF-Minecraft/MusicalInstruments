@@ -22,8 +22,10 @@ import java.util.concurrent.TimeUnit;
 
 /** Versioned, bounded data files. A failed write never truncates the last saved project. */
 public final class StudioStore {
-    // Enough for a full 12,000-note song plus a replacement take, including escaped names.
+    // Enough for a full 12,000-note song plus a replacement take, including escaped names, even in format 1.
     static final int MAX_FILE_BYTES = 32_000_000;
+    // Songs and projects are written in this format; format 1 files remain readable.
+    static final int FORMAT = 2;
     // Neither is a .yml file, so project listings skip them.
     static final String INDEX = "library.index";
     // Holds the selected project's ID, so the selection is not a second copy of the project.
@@ -219,7 +221,7 @@ public final class StudioStore {
                 throw new IllegalArgumentException("Project owner mismatch");
             }
             if (id != null && !song.id().equals(id)) throw new IllegalArgumentException("Project ID mismatch");
-            Track pending = yaml.isSet("pending") ? decodeTrack(map(yaml.get("pending"))) : null;
+            Track pending = yaml.isSet("pending") ? decodeTrack(map(yaml.get("pending")), yaml.getInt("format") == FORMAT) : null;
             return new Project(song, pending, yaml.getInt("bpm"), yaml.getBoolean("metronome"));
         } catch (RuntimeException ex) {
             throw new IOException("Invalid project " + owner, ex);
@@ -289,7 +291,7 @@ public final class StudioStore {
         } catch (InvalidConfigurationException ex) {
             throw new IOException("Invalid studio YAML: " + file.getFileName(), ex);
         }
-        if (yaml.getInt("format") != 1) {
+        if (yaml.getInt("format") < 1 || yaml.getInt("format") > FORMAT) {
             throw new IOException("Unsupported studio format: " + file.getFileName());
         }
         return yaml;
@@ -329,7 +331,7 @@ public final class StudioStore {
 
     private YamlConfiguration encodeSong(Song song) {
         YamlConfiguration yaml = new YamlConfiguration();
-        yaml.set("format", 1);
+        yaml.set("format", FORMAT);
         yaml.set("id", song.id().toString());
         yaml.set("owner", song.owner().toString());
         yaml.set("author", song.author());
@@ -344,8 +346,7 @@ public final class StudioStore {
         result.put("length", track.lengthTicks());
         result.put("gain", track.gain());
         result.put("muted", track.muted());
-        result.put("notes", track.notes().stream().map(note -> List.of(
-                note.tick(), note.instrument(), note.sound(), note.volume(), note.pitch())).toList());
+        encodeNotes(track, result);
         return result;
     }
 
@@ -354,12 +355,20 @@ public final class StudioStore {
         if (raw.size() > Song.MAX_TRACKS) {
             throw new IllegalArgumentException("Too many tracks");
         }
-        List<Track> tracks = raw.stream().map(value -> decodeTrack(map(value))).toList();
+        boolean compact = yaml.getInt("format") == FORMAT;
+        List<Track> tracks = raw.stream().map(value -> decodeTrack(map(value), compact)).toList();
         return new Song(UUID.fromString(yaml.getString("id")), UUID.fromString(yaml.getString("owner")),
                 yaml.getString("author"), yaml.getString("title"), tracks);
     }
 
-    private Track decodeTrack(Map<?, ?> raw) {
+    private Track decodeTrack(Map<?, ?> raw, boolean compact) {
+        List<Note> notes = compact ? compactNotes(raw) : legacyNotes(raw);
+        return new Track(integer(raw.get("slot")), integer(raw.get("length")),
+                number(raw.get("gain")).floatValue(), (Boolean) raw.get("muted"), notes);
+    }
+
+    // Format 1 wrote each note as a five-item YAML list, about 77 bytes per note.
+    private List<Note> legacyNotes(Map<?, ?> raw) {
         List<?> entries = list(raw.get("notes"));
         if (entries.size() > Song.MAX_NOTES) {
             throw new IllegalArgumentException("Too many notes");
@@ -373,8 +382,55 @@ public final class StudioStore {
             notes.add(new Note(integer(note.get(0)), text(note.get(1)), text(note.get(2)),
                     number(note.get(3)).floatValue(), number(note.get(4)).floatValue()));
         }
-        return new Track(integer(raw.get("slot")), integer(raw.get("length")),
-                number(raw.get("gain")).floatValue(), (Boolean) raw.get("muted"), notes);
+        return notes;
+    }
+
+    // Format 2 lists each track's instrument and sample names once. Each note is one line of
+    // "<ticks since the previous note> <instrument> <sample> <volume> <pitch>", the names given
+    // as positions in that list. One text value per track also parses much faster than a YAML list per note.
+    private void encodeNotes(Track track, Map<String, Object> result) {
+        Map<String, Integer> names = new LinkedHashMap<>();
+        StringBuilder lines = new StringBuilder(track.notes().size() * 16);
+        int previous = 0;
+        for (Note note : track.notes()) {
+            if (!lines.isEmpty()) lines.append('\n');
+            lines.append(note.tick() - previous).append(' ')
+                    .append(names.computeIfAbsent(note.instrument(), name -> names.size())).append(' ')
+                    .append(names.computeIfAbsent(note.sound(), name -> names.size())).append(' ')
+                    .append(note.volume()).append(' ').append(note.pitch());
+            previous = note.tick();
+        }
+        result.put("names", List.copyOf(names.keySet()));
+        result.put("notes", lines.toString());
+    }
+
+    private List<Note> compactNotes(Map<?, ?> raw) {
+        List<?> entries = list(raw.get("names"));
+        if (entries.size() > 2 * Song.MAX_NOTES) {
+            throw new IllegalArgumentException("Too many names");
+        }
+        String[] names = entries.stream().map(this::text).toArray(String[]::new);
+        if (!(raw.get("notes") instanceof String lines)) {
+            throw new IllegalArgumentException("Expected note lines");
+        }
+        List<Note> notes = new ArrayList<>();
+        int tick = 0;
+        for (int start = 0; start < lines.length(); ) {
+            if (notes.size() == Song.MAX_NOTES) {
+                throw new IllegalArgumentException("Too many notes");
+            }
+            int end = lines.indexOf('\n', start);
+            if (end < 0) end = lines.length();
+            String[] fields = lines.substring(start, end).split(" ");
+            if (fields.length != 5) {
+                throw new IllegalArgumentException("Invalid note fields");
+            }
+            tick = Math.addExact(tick, Integer.parseInt(fields[0]));
+            notes.add(new Note(tick, names[Integer.parseInt(fields[1])], names[Integer.parseInt(fields[2])],
+                    Float.parseFloat(fields[3]), Float.parseFloat(fields[4])));
+            start = end + 1;
+        }
+        return notes;
     }
 
     private Map<?, ?> map(Object value) {

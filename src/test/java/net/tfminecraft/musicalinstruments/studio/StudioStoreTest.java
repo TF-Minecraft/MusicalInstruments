@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class StudioStoreTest {
     @Test
-    void maximumSizeProjectAndReplacementTakeRemainReadable() throws Exception {
+    void maximumSizeProjectAndReplacementTakeStayCompactAndReadable() throws Exception {
         String instrument = "i".repeat(100);
         String sound = "s".repeat(200);
         var notes = java.util.stream.IntStream.range(0, Song.MAX_NOTES)
@@ -24,9 +24,51 @@ class StudioStoreTest {
         StudioStore store = new StudioStore(directory);
         store.save(project);
         long bytes = Files.size(directory.resolve("projects").resolve(project.song().owner().toString()).resolve(project.song().id() + ".yml"));
-        assertTrue(bytes > 8_000_000);
-        assertTrue(bytes <= StudioStore.MAX_FILE_BYTES);
+        assertTrue(bytes < 600_000, "Format 1 needed over 8 MB for this project: " + bytes);
         assertEquals(project, store.project(project.song().owner()).orElseThrow());
+    }
+
+    @Test
+    void formatOneProjectsAndEditionsRemainReadable() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        String track = "- slot: 2\n  length: 20\n  gain: 0.5\n  muted: true\n  notes:\n"
+                + "  - - 3\n    - lute\n    - tfmc:lute.c4\n    - 1.5\n    - 0.75\n"
+                + "  - - 9\n    - flute\n    - tfmc:flute\n    - 2.0\n    - 1.0\n";
+        String song = "format: 1\nid: " + id + "\nowner: " + owner + "\nauthor: Musician\ntitle: Old\ntracks:\n" + track;
+        StudioStore store = new StudioStore(directory);
+        Path file = directory.resolve("projects").resolve(owner.toString()).resolve(id + ".yml");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, song + "bpm: 90\nmetronome: true\npending:\n  slot: 2\n  length: 5\n  gain: 1.0\n  muted: false\n"
+                + "  notes:\n  - - 0\n    - lute\n    - tfmc:lute.c4\n    - 1.0\n    - 1.0\n");
+        Files.writeString(directory.resolve("songs").resolve(id + ".yml"), song);
+        Track expected = new Track(2, 20, .5f, true, List.of(new Note(3, "lute", "tfmc:lute.c4", 1.5f, .75f),
+                new Note(9, "flute", "tfmc:flute", 2, 1)));
+        Project project = store.project(owner, id);
+        assertEquals(new Song(id, owner, "Musician", "Old", List.of(expected)), project.song());
+        assertEquals(new Track(2, 5, .5f, true, List.of(new Note(0, "lute", "tfmc:lute.c4", 1, 1))), project.pending());
+        assertEquals(90, project.bpm());
+        assertEquals(project.song(), store.song(id));
+        store.save(project); // Saving rewrites the project in the compact format.
+        assertTrue(Files.readString(file).startsWith("format: 2\n"));
+        assertEquals(project, new StudioStore(directory).project(owner, id));
+    }
+
+    @Test
+    void compactNotesStoreEachNameOnceAndTimeSinceThePreviousNote() throws Exception {
+        var notes = List.of(new Note(5, "lute", "tfmc:lute.c4", 1, 1), new Note(5, "lute", "tfmc:lute.e4", 1, 1.25f),
+                new Note(12, "flute", "tfmc:lute.c4", .5f, 2));
+        Song song = new Song(UUID.randomUUID(), UUID.randomUUID(), "Musician", "Song",
+                List.of(new Track(1, 20, 1, false, notes), new Track(2, 1, 1, false, List.of())));
+        StudioStore store = new StudioStore(directory);
+        store.publish(song);
+        var yaml = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(
+                directory.resolve("songs").resolve(song.id() + ".yml").toFile());
+        var track = yaml.getMapList("tracks").getFirst();
+        assertEquals(List.of("lute", "tfmc:lute.c4", "tfmc:lute.e4", "flute"), track.get("names"));
+        assertEquals("5 0 1 1.0 1.0\n0 0 2 1.0 1.25\n7 3 1 0.5 2.0", track.get("notes"));
+        assertEquals("", yaml.getMapList("tracks").getLast().get("notes"));
+        assertEquals(song, store.song(song.id()));
     }
 
     @TempDir Path directory;
@@ -163,7 +205,7 @@ class StudioStoreTest {
         StudioStore store = new StudioStore(directory);
         UUID owner = UUID.randomUUID();
         Path file = directory.resolve("projects").resolve(owner + ".yml");
-        for (String invalid : List.of("format: 2\n", "format: 1\ntracks: nonsense\n", "[broken yaml")) {
+        for (String invalid : List.of("format: 3\n", "format: 0\n", "format: 1\ntracks: nonsense\n", "[broken yaml")) {
             Files.writeString(file, invalid);
             assertThrows(IOException.class, () -> store.project(owner));
             assertEquals(invalid, Files.readString(file));

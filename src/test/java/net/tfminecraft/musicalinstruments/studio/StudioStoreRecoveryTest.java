@@ -95,6 +95,7 @@ class StudioStoreRecoveryTest {
         }
         for (int mode = 0; mode < 4; mode++) {
             YamlConfiguration yaml = new YamlConfiguration(); yaml.loadFromString(valid);
+            yaml.set("format", 1);
             Map<String, Object> track = new LinkedHashMap<>((Map<String, Object>) yaml.getMapList("tracks").getFirst());
             if (mode == 0) yaml.set("tracks", Collections.nCopies(9, track));
             else {
@@ -102,6 +103,27 @@ class StudioStoreRecoveryTest {
                         : mode == 2 ? List.of(List.of(0, "lute")) : List.of(List.of(0, "lute", 7, 1, 1)));
                 yaml.set("tracks", List.of(track));
             }
+            yaml.save(file.toFile()); assertThrows(IOException.class, () -> store.song(project.song().id()));
+        }
+        String tooMany = String.join("\n", Collections.nCopies(Song.MAX_NOTES + 1, "0 0 1 1.0 1.0"));
+        List<Object[]> compact = List.of(
+                new Object[] {List.of("lute", "note"), "0 0 1 1.0"}, // Missing field.
+                new Object[] {List.of("lute", "note"), "0 0 2 1.0 1.0"}, // Unknown name.
+                new Object[] {List.of("lute", "note"), "x 0 1 1.0 1.0"},
+                new Object[] {List.of("lute", "note"), "0 0 1 1.0 1.0\n-1 0 1 1.0 1.0"}, // Earlier than the previous note.
+                new Object[] {List.of("lute", "note"), "0 0 1 1.0 1.0\n\n0 0 1 1.0 1.0"},
+                new Object[] {List.of("lute", "note"), "2147483647 0 1 1.0 1.0\n1 0 1 1.0 1.0"},
+                new Object[] {List.of("lute", "note"), "0 0 1 NaN 1.0"},
+                new Object[] {List.of("lute", "note"), List.of("0 0 1 1.0 1.0")},
+                new Object[] {List.of("lute", 7), "0 0 1 1.0 1.0"},
+                new Object[] {Collections.nCopies(2 * Song.MAX_NOTES + 1, "lute"), "0 0 1 1.0 1.0"},
+                new Object[] {List.of("lute", "note"), tooMany});
+        for (Object[] invalid : compact) {
+            YamlConfiguration yaml = new YamlConfiguration(); yaml.loadFromString(valid);
+            Map<String, Object> track = new LinkedHashMap<>((Map<String, Object>) yaml.getMapList("tracks").getFirst());
+            track.put("names", invalid[0]);
+            track.put("notes", invalid[1]);
+            yaml.set("tracks", List.of(track));
             yaml.save(file.toFile()); assertThrows(IOException.class, () -> store.song(project.song().id()));
         }
         Files.writeString(file, " ".repeat(StudioStore.MAX_FILE_BYTES + 1));
