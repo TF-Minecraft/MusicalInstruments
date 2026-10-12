@@ -208,6 +208,41 @@ class StudioSaveQueueTest {
         }
     }
 
+    @Test
+    void retryingAFailedEditDoesNotEraseTheCheckpointOfARecordingInProgress() throws Exception {
+        var worker = Executors.newSingleThreadExecutor();
+        var fixture = new Fixture(directory, worker);
+        Player player = fixture.player();
+        Project original = fixture.project(player);
+        fixture.studio.save(player, original);
+        Project edited = new Project(original.song(), null, 120, false);
+        doThrow(new IOException("One transient failure before the recording")).when(fixture.store).save(edited);
+        try {
+            fixture.studio.edit(player, edited);
+            worker.submit(() -> {}).get(3, TimeUnit.SECONDS);
+            fixture.tick.run(); // Clock 1 observes the failure; the edit stays cached and unsaved.
+            doCallRealMethod().when(fixture.store).save(any());
+            fixture.studio.record(player, 2); // The take starts at clock 3.
+            fixture.tick.run(); fixture.tick.run();
+            fixture.studio.capture(player, "lute", "new_take", 1, 1);
+            for (int clock = 4; clock < StudioService.RETRY_TICKS; clock++) fixture.tick.run();
+            worker.submit(() -> {}).get(3, TimeUnit.SECONDS);
+            Project checkpoint = new StudioStore(directory).project(player.getUniqueId()).orElseThrow();
+            assertEquals("new_take", checkpoint.pending().notes().getFirst().sound());
+            assertEquals(120, checkpoint.bpm()); // Checkpoints include the failed edit.
+            fixture.tick.run(); // The periodic retry skips the recording musician.
+            worker.submit(() -> {}).get(3, TimeUnit.SECONDS);
+            assertTrue(fixture.studio.activity(player).recording());
+            assertEquals(checkpoint, new StudioStore(directory).project(player.getUniqueId()).orElseThrow());
+            fixture.studio.stop(player);
+            worker.submit(() -> {}).get(3, TimeUnit.SECONDS);
+            fixture.tick.run();
+            assertEquals(fixture.studio.requireProject(player), new StudioStore(directory).project(player.getUniqueId()).orElseThrow());
+        } finally {
+            fixture.studio.close();
+        }
+    }
+
     private static final class Fixture {
         private final Server server = mock(Server.class);
         private final StudioStore store;

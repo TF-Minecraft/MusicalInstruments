@@ -762,10 +762,11 @@ public final class StudioService {
         }
     }
 
-    // Queues another write for every cached project whose last write failed.
+    // Queues another write for every cached project whose last write failed. A recording is skipped:
+    // its checkpoints and final take include the cached project, which still lacks the take and would erase it.
     private void retryFailedSaves() {
         for (UUID owner : unsaved) {
-            if (!pendingSaves.containsKey(owner)) queueSave(projects.get(owner));
+            if (!pendingSaves.containsKey(owner) && !recordings.containsKey(owner)) queueSave(projects.get(owner));
         }
     }
 
