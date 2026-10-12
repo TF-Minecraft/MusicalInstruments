@@ -118,7 +118,42 @@ class StudioStationTest {
     }
 
     @Test
+    void itemsAdderStationsMatchNothingWhileItemsAdderIsNotEnabled() {
+        StudioStation station = StudioStation.itemsAdder("tfmc:music_station");
+        CustomBlock.lookup = target -> new CustomBlock("tfmc:music_station");
+        CustomFurniture.lookup = target -> new CustomFurniture("tfmc:music_station");
+        assertFalse(station.matches(block));
+        assertFalse(station.matches(furniture));
+        verify(world, never()).getNearbyEntities(any(BoundingBox.class));
+        var itemsAdder = MockBukkit.createMockPlugin("ItemsAdder");
+        assertTrue(station.matches(block));
+        assertTrue(station.matches(furniture));
+        MockBukkit.getMock().getPluginManager().disablePlugin(itemsAdder);
+        assertFalse(station.matches(block));
+    }
+
+    @Test
+    void lookupsMissingFromTheInstalledItemsAdderAreRememberedAsMissing() throws Exception {
+        var method = StudioStation.class.getDeclaredMethod("method", String.class,
+                Class.forName(StudioStation.class.getName() + "$Lookup"));
+        method.setAccessible(true);
+        int[] lookups = {0};
+        Object missing = java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[] {Class.forName(StudioStation.class.getName() + "$Lookup")}, (proxy, called, args) -> {
+                    lookups[0]++;
+                    throw new NoSuchMethodException("byAlreadySpawned(Block)");
+                });
+        for (int attempt = 0; attempt < 2; attempt++) {
+            var failure = assertThrows(java.lang.reflect.InvocationTargetException.class,
+                    () -> method.invoke(null, "test#missing", missing));
+            assertInstanceOf(NoSuchMethodException.class, failure.getCause());
+        }
+        assertEquals(1, lookups[0]);
+    }
+
+    @Test
     void itemsAdderStationsMatchCustomBlocksAndFurniture() {
+        MockBukkit.createMockPlugin("ItemsAdder");
         StudioStation station = StudioStation.itemsAdder("tfmc:music_station");
         assertFalse(station.matches(block));
         assertFalse(station.matches((Entity) null));
@@ -172,6 +207,7 @@ class StudioStationTest {
 
     @Test
     void furnitureHitboxesResolveWithoutAnIntersectingEntityAndFallBackWhenUnavailable() {
+        MockBukkit.createMockPlugin("ItemsAdder");
         StudioStation station = StudioStation.itemsAdder("tfmc:music_station");
         CustomFurniture.blockLookup = target -> new CustomFurniture("tfmc:music_station");
         assertTrue(station.matches(block));

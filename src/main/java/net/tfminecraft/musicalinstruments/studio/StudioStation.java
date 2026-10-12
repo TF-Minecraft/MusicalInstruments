@@ -12,6 +12,7 @@ import org.bukkit.util.BoundingBox;
 import java.lang.reflect.Method;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
@@ -23,7 +24,7 @@ import java.util.logging.Logger;
 public final class StudioStation {
     /** Squared reach within which a player can keep using the station's controls. */
     private static final double REACH_SQUARED = 36;
-    private static final Map<String, Method> METHODS = new ConcurrentHashMap<>();
+    private static final Map<String, Optional<Method>> METHODS = new ConcurrentHashMap<>();
     private final Material material;
     private final String itemsAdderId;
 
@@ -95,6 +96,10 @@ public final class StudioStation {
         if (material != null) {
             return block.getType() == material;
         }
+        // This runs on every right-click on a block; without ItemsAdder each lookup would fail slowly.
+        if (!pluginEnabled("ItemsAdder")) {
+            return false;
+        }
         if (itemsAdderId.equals(namespacedId("dev.lone.itemsadder.api.CustomBlock", "byAlreadyPlaced", Block.class, block))) {
             return true;
         }
@@ -111,7 +116,7 @@ public final class StudioStation {
     }
 
     public boolean matches(Entity entity) {
-        return itemsAdderId != null && entity != null
+        return itemsAdderId != null && entity != null && pluginEnabled("ItemsAdder")
                 && itemsAdderId.equals(namespacedId("dev.lone.itemsadder.api.CustomFurniture", "byAlreadySpawned", Entity.class, entity));
     }
 
@@ -152,14 +157,19 @@ public final class StudioStation {
     private interface Lookup { Method find() throws ReflectiveOperationException; }
 
     // matches(Block) runs on every right-click on a block and every studio menu refresh, so each
-    // reflective lookup is resolved once. Failures are not cached: ItemsAdder may enable later.
+    // reflective lookup is resolved once. Lookups run only while ItemsAdder is enabled, so a method
+    // missing from that ItemsAdder version stays missing and is remembered too.
     private static Method method(String key, Lookup lookup) throws ReflectiveOperationException {
-        Method method = METHODS.get(key);
+        Optional<Method> method = METHODS.get(key);
         if (method == null) {
-            method = lookup.find();
+            try {
+                method = Optional.of(lookup.find());
+            } catch (NoSuchMethodException ex) {
+                method = Optional.empty();
+            }
             METHODS.put(key, method);
         }
-        return method;
+        return method.orElseThrow(() -> new NoSuchMethodException(key));
     }
 
     private static boolean pluginEnabled(String name) {
