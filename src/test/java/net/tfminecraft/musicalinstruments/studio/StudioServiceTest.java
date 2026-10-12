@@ -797,6 +797,12 @@ class StudioServiceTest {
         studio.deleteProject(player, studio.project(player, inactive.id()));
         studio.create(player, "Replacement", false);
         assertEquals(36, studio.listProjects(player).size());
+        // Without an active project, a reset would add a 37th project.
+        studio.quit(player);
+        java.nio.file.Files.writeString(directory.resolve("projects").resolve(owner.toString()).resolve(StudioStore.SELECTED), "garbage");
+        assertNull(studio.project(player));
+        assertThrows(IllegalArgumentException.class, () -> studio.create(player, "Untitled", true));
+        assertEquals(36, studio.listProjects(player).size());
     }
 
     @Test

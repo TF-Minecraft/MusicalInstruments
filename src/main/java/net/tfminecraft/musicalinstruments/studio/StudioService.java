@@ -152,8 +152,9 @@ public final class StudioService {
 
     public void create(Player player, String title, boolean reset) throws IOException {
         requireSaved(player);
-        if (!reset) requireProjectSpace(player);
         Project previous = project(player);
+        // Without an active project to replace, a reset creates another project.
+        if (!reset || previous == null) requireProjectSpace(player);
         persist(player); // A project whose last write failed is written before another replaces it.
         UUID id = reset && previous != null ? previous.song().id() : UUID.randomUUID();
         save(player, new Project(new Song(id, player.getUniqueId(), player.getName(), title, List.of()),
