@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class StudioStoreTest {
     @Test
@@ -162,7 +164,7 @@ class StudioStoreTest {
     void publishedEditionRemainsImmutableAfterProjectChanges() throws Exception {
         StudioStore store = new StudioStore(directory);
         Project project = project();
-        Song edition = store.publishEdition(project.song());
+        Song edition = store.publishEdition(project.song(), 0);
         assertNotEquals(project.song().id(), edition.id());
         store.save(project.accept());
         assertEquals(edition, new StudioStore(directory).song(edition.id()));
@@ -174,10 +176,10 @@ class StudioStoreTest {
     void republishingUnchangedMusicReusesItsEditionWithoutAnotherFile() throws Exception {
         StudioStore store = new StudioStore(directory);
         Project project = project();
-        Song edition = store.publishEdition(project.song());
+        Song edition = store.publishEdition(project.song(), 0);
         Song renamed = new Song(project.song().id(), project.song().owner(), "Musician", "Renamed", project.song().tracks());
-        assertEquals(edition, store.publishEdition(project.song()));
-        assertNotEquals(edition.id(), store.publishEdition(renamed).id());
+        assertEquals(edition, store.publishEdition(project.song(), 0));
+        assertNotEquals(edition.id(), store.publishEdition(renamed, 0).id());
         try (var files = Files.list(directory.resolve("songs"))) {
             assertEquals(2, files.count());
         }
@@ -185,7 +187,65 @@ class StudioStoreTest {
         var yaml = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(file.toFile());
         yaml.set("title", "Tampered");
         yaml.save(file.toFile());
-        assertThrows(IOException.class, () -> store.publishEdition(project.song()));
+        assertThrows(IOException.class, () -> store.publishEdition(project.song(), 0));
+    }
+
+    @Test
+    void editionsKeepOnlyWhatPlaybackEmits() throws Exception {
+        var audible = new Note(0, "lute", "tfmc:lute", 2, 1);
+        var silent = new Note(1, "lute", "tfmc:lute", 0, 1);
+        Song song = new Song(UUID.randomUUID(), UUID.randomUUID(), "Musician", "Song", List.of(
+                new Track(1, 30, 1, false, List.of(audible, silent)), new Track(2, 40, 1, true, List.of(audible)),
+                new Track(3, 50, 0, false, List.of(audible)), new Track(4, 60, .5f, false, List.of(silent))));
+        StudioStore store = new StudioStore(directory);
+        Song edition = store.publishEdition(song, 0);
+        assertEquals(List.of(new Track(1, 30, 1, false, List.of(audible))), edition.tracks());
+        assertEquals(edition, store.song(edition.id()));
+        // Muting a track that is already silent publishes the same edition.
+        Song muted = song.replace(song.track(4).mix(.5f, true));
+        assertEquals(edition.id(), store.publishEdition(muted, 0).id());
+    }
+
+    @Test
+    void eachPlayerCanPublishALimitedNumberOfNewEditionsADay() throws Exception {
+        java.time.Clock clock = mock(java.time.Clock.class);
+        long start = 1_000_000_000_000L;
+        when(clock.millis()).thenReturn(start);
+        StudioStore store = new StudioStore(directory, java.util.logging.Logger.getAnonymousLogger(), clock);
+        Project project = project();
+        Song song = project.song().replace(new Track(2, 10, 1, false, List.of(new Note(0, "lute", "tfmc:lute", 1, 1))));
+        Song first = store.publishEdition(song, 2);
+        when(clock.millis()).thenReturn(start + java.util.concurrent.TimeUnit.HOURS.toMillis(23));
+        store.publishEdition(retitled(song, "Second"), 2);
+        assertEquals(first, store.publishEdition(song, 2)); // Republishing does not count.
+        var limit = assertThrows(IllegalArgumentException.class, () -> store.publishEdition(retitled(song, "Third"), 2));
+        assertTrue(limit.getMessage().endsWith("Try again in 60 minutes"), limit.getMessage());
+        when(clock.millis()).thenReturn(start + java.util.concurrent.TimeUnit.HOURS.toMillis(24));
+        store.publishEdition(retitled(song, "Third"), 2); // The first publication left the window.
+        limit = assertThrows(IllegalArgumentException.class, () -> store.publishEdition(retitled(song, "Fourth"), 2));
+        assertTrue(limit.getMessage().endsWith("Try again in 23 hours"), limit.getMessage());
+        Path log = directory.resolve("editions").resolve(song.owner() + ".log");
+        assertEquals(2, Files.readAllLines(log).size()); // Older entries are dropped.
+        Files.writeString(log, "damaged\n" + Files.readString(log));
+        assertThrows(IllegalArgumentException.class, () -> store.publishEdition(retitled(song, "Fourth"), 2));
+        store.publishEdition(retitled(song, "Fourth"), 0); // 0 disables the limit.
+        try (var files = Files.list(directory.resolve("songs"))) {
+            assertEquals(4, files.count());
+        }
+    }
+
+    private Song retitled(Song song, String title) {
+        return new Song(song.id(), song.owner(), song.author(), title, song.tracks());
+    }
+
+    @Test
+    void anEditionFileWithTheSameSizeButOtherContentIsRejected() throws Exception {
+        StudioStore store = new StudioStore(directory);
+        Song song = project().song().replace(new Track(2, 10, 1, false, List.of(new Note(0, "lute", "tfmc:lute", 1, 1))));
+        Song edition = store.publishEdition(song, 0);
+        Path file = directory.resolve("songs").resolve(edition.id() + ".yml");
+        Files.writeString(file, Files.readString(file).replace("tfmc:lute", "tfmc:lyre"));
+        assertThrows(IOException.class, () -> store.publishEdition(song, 0));
     }
 
     @Test
@@ -270,7 +330,7 @@ class StudioStoreTest {
                 directory.resolve("projects").resolve(anotherOwner + ".yml"));
         assertTrue(store.project(anotherOwner).isEmpty());
         assertTrue(Files.exists(directory.resolve("projects").resolve(anotherOwner + ".yml.damaged")));
-        Song edition = store.publishEdition(project.song());
+        Song edition = store.publishEdition(project.song(), 0);
         UUID anotherId = UUID.randomUUID();
         Files.copy(directory.resolve("songs").resolve(edition.id() + ".yml"),
                 directory.resolve("songs").resolve(anotherId + ".yml"));

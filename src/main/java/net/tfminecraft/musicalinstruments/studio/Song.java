@@ -47,6 +47,17 @@ public record Song(UUID id, UUID owner, String author, String title, List<Track>
                 && track.notes().stream().anyMatch(note -> note.volume() > 0));
     }
 
+    /** The same song with only what playback emits: muted, silent and empty tracks and silent notes are left out. */
+    public Song audibleMix() {
+        List<Track> audible = new ArrayList<>();
+        for (Track track : tracks) {
+            if (track.muted() || track.gain() <= 0) continue;
+            List<Note> notes = track.notes().stream().filter(note -> note.volume() > 0).toList();
+            if (!notes.isEmpty()) audible.add(new Track(track.slot(), track.lengthTicks(), track.gain(), false, notes));
+        }
+        return new Song(id, owner, author, title, audible);
+    }
+
     public Song replace(Track track) {
         List<Track> result = new ArrayList<>(tracks);
         result.removeIf(existing -> existing.slot() == track.slot());

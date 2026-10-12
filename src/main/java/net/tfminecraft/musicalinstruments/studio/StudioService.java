@@ -409,7 +409,8 @@ public final class StudioService {
             long seconds = (last + settings.publishCooldownTicks() - clock + 19) / 20;
             throw new IllegalArgumentException("Wait " + seconds + " seconds before publishing again");
         }
-        Song edition = store.publishEdition(project.song()); // No item is consumed when publication fails.
+        // No item is consumed when publication fails.
+        Song edition = store.publishEdition(project.song(), settings.editionsPerDay());
         lastPublished.put(player.getUniqueId(), clock);
         editions.put(edition.id(), edition);
         return edition;

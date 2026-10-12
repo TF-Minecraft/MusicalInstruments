@@ -14,6 +14,9 @@ checkpoint-ticks: 200
 # Minimum wait between a player's publications. Published editions are kept forever
 # because discs reference them; republishing unchanged music reuses its edition. 0 disables.
 publish-cooldown-seconds: 30
+# New editions each player can publish in any 24 hours, which bounds how fast published
+# songs grow on disk. Republishing music that is already published does not count. 0 disables.
+max-editions-per-day: 20
 # Right-clicking this block or furniture opens the studio (permission instruments.record).
 #   v.<material>        vanilla block, e.g. v.loom (a jukebox cannot be used: it plays recorded discs)
 #   ia.<namespace:id>   ItemsAdder custom block or furniture, e.g. ia.tfmc:music_station

@@ -9,7 +9,9 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Clock;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -34,8 +36,10 @@ public final class StudioStore {
     static final String SELECTED = "selected";
     // Stands in for the edition ID while hashing, so the ID depends only on the music and its labels.
     private static final UUID CONTENT_ID = new UUID(0, 0);
+    private static final long DAY_MILLIS = TimeUnit.DAYS.toMillis(1);
     private final Path root;
     private final Logger logger;
+    private final Clock clock;
     // Owners already moved off the legacy layout. Both the main thread and the checkpoint
     // writer use the store, so the set is also the migration lock.
     private final Set<UUID> migrated = new HashSet<>();
@@ -54,8 +58,13 @@ public final class StudioStore {
     }
 
     public StudioStore(Path root, Logger logger) throws IOException {
+        this(root, logger, Clock.systemUTC());
+    }
+
+    StudioStore(Path root, Logger logger, Clock clock) throws IOException {
         this.root = root;
         this.logger = logger;
+        this.clock = clock;
         Files.createDirectories(root.resolve("projects"));
         Files.createDirectories(root.resolve("songs"));
         // A crash between writing and moving leaves a temporary file; it never holds the only copy.
@@ -337,16 +346,55 @@ public final class StudioStore {
      * Publishes an immutable edition of the song. Editions are named after their content, so
      * republishing an unchanged mix returns the earlier edition instead of adding another file.
      */
-    public Song publishEdition(Song song) throws IOException {
-        String content = encodeSong(new Song(CONTENT_ID, song.owner(), song.author(), song.title(), song.tracks())).saveToString();
+    public Song publishEdition(Song song, int perDay) throws IOException {
+        // Muted and silent parts are never played, so they are not kept forever either.
+        List<Track> tracks = song.audibleMix().tracks();
+        String content = encodeSong(new Song(CONTENT_ID, song.owner(), song.author(), song.title(), tracks)).saveToString();
         UUID id = UUID.nameUUIDFromBytes(content.getBytes(StandardCharsets.UTF_8));
-        Song edition = new Song(id, song.owner(), song.author(), song.title(), song.tracks());
-        if (Files.exists(root.resolve("songs").resolve(id + ".yml"))) {
-            if (!song(id).equals(edition)) throw new IOException("Published edition does not match its content: " + id);
+        Song edition = new Song(id, song.owner(), song.author(), song.title(), tracks);
+        Path file = root.resolve("songs").resolve(id + ".yml");
+        if (Files.exists(file)) {
+            // The same bytes are the same edition; comparing them is cheaper than parsing it again.
+            byte[] contents = encodeSong(edition).saveToString().getBytes(StandardCharsets.UTF_8);
+            if (Files.size(file) != contents.length || !Arrays.equals(Files.readAllBytes(file), contents)) {
+                throw new IOException("Published edition does not match its content: " + id);
+            }
             return edition;
         }
+        long now = clock.millis();
+        List<Long> recent = recentEditions(song.owner(), now);
+        if (perDay > 0 && recent.size() >= perDay) {
+            long minutes = (recent.getFirst() + DAY_MILLIS - now + 59_999) / 60_000;
+            throw new IllegalArgumentException("You can publish " + perDay + " new song editions a day. Try again in "
+                    + (minutes > 90 ? (minutes + 59) / 60 + " hours" : minutes + " minutes"));
+        }
         publish(edition);
+        recent.add(now);
+        Path log = editionLog(song.owner());
+        Files.createDirectories(log.getParent());
+        write(log, String.join("\n", recent.stream().map(String::valueOf).toList()).getBytes(StandardCharsets.UTF_8), true);
         return edition;
+    }
+
+    private Path editionLog(UUID owner) {
+        return root.resolve("editions").resolve(owner + ".log");
+    }
+
+    // When each of the owner's editions of the last 24 hours was published, oldest first.
+    private List<Long> recentEditions(UUID owner, long now) throws IOException {
+        Path file = editionLog(owner);
+        List<Long> recent = new ArrayList<>();
+        if (!Files.exists(file)) return recent;
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            try {
+                long at = Long.parseLong(line.strip());
+                if (at > now - DAY_MILLIS) recent.add(at);
+            } catch (NumberFormatException ex) {
+                // A damaged line no longer counts; the next publication rewrites the log.
+            }
+        }
+        recent.sort(null);
+        return recent;
     }
 
     private YamlConfiguration read(Path file) throws IOException {
