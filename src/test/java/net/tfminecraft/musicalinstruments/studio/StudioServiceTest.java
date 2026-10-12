@@ -101,7 +101,7 @@ class StudioServiceTest {
             assertEquals(kept, studio.requireProject(player));
             // Changes that read or remove project files wait until they are current.
             assertThrows(IllegalArgumentException.class, () -> studio.create(player, "Other", false));
-            assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, ProjectSummary.of(kept)));
+            assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, kept));
             tick.run(); // An incomplete save never waits on the server clock.
             studio.quit(player);
             when(server.getPlayer(owner)).thenReturn(null);
@@ -794,7 +794,7 @@ class StudioServiceTest {
         studio.create(player, "Reset", true);
         assertEquals(36, studio.listProjects(player).size());
         ProjectSummary inactive = studio.listProjects(player).stream().filter(p -> !p.id().equals(active.song().id())).findFirst().orElseThrow();
-        studio.deleteProject(player, inactive);
+        studio.deleteProject(player, studio.project(player, inactive.id()));
         studio.create(player, "Replacement", false);
         assertEquals(36, studio.listProjects(player).size());
     }
@@ -806,7 +806,7 @@ class StudioServiceTest {
         Project active = new Project(song(track(1, "note")), null, 100, false);
         studio.save(player, active);
         Song edition = store.publishEdition(active.song(), 0);
-        studio.deleteProject(player, ProjectSummary.of(active));
+        studio.deleteProject(player, active);
         assertNull(studio.project(player));
         studio.quit(player); awaitSaves();
         assertTrue(store.project(owner).isEmpty());
@@ -821,12 +821,97 @@ class StudioServiceTest {
         Song song = before.song();
         Project changed = new Project(new Song(song.id(), owner, song.author(), "Renamed", song.tracks()), null, 100, false);
         studio.edit(player, changed); awaitSaves();
-        assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, ProjectSummary.of(before)));
+        assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, before));
         Project foreign = new Project(new Song(UUID.randomUUID(), UUID.randomUUID(), "Other", "Other", List.of()), null, 100, false);
-        assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, ProjectSummary.of(foreign)));
+        assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, foreign));
         studio.record(player, 2);
-        assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, ProjectSummary.of(changed)));
+        assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, changed));
         assertEquals(changed, store.project(owner).orElseThrow());
+    }
+
+    @Test
+    void deletionMustRejectAReplacementTakeOfTheSameDuration() throws Exception {
+        Project original = new Project(song(new Track(1, 20, 1, false,
+                List.of(new Note(0, "lute", "original_take", 1, 1)))), null, 100, false);
+        studio.save(player, original);
+        Project confirmation = studio.project(player, original.song().id());
+        studio.record(player, 1);
+        tick.run(); tick.run();
+        studio.capture(player, "lute", "replacement_take", 1, 1);
+        for (int index = 0; index < 19; index++) tick.run();
+        studio.stop(player);
+        Project kept = studio.requireProject(player).accept();
+        studio.edit(player, kept);
+        Project changed = new Project(kept.song().replace(kept.song().track(1).mix(.5f, true)),
+                null, 120, true);
+        studio.edit(player, changed); awaitSaves();
+        assertEquals(ProjectSummary.of(confirmation), ProjectSummary.of(changed));
+        assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, confirmation));
+        assertEquals(changed, store.project(owner, original.song().id()));
+        assertEquals(changed, studio.requireProject(player));
+    }
+
+    @Test
+    void deletionRejectsEditsToAnInactiveProjectAndLoadsOnlyThatProject() throws Exception {
+        Project original = new Project(song(track(1, "original")), null, 100, false);
+        store.save(original);
+        Project active = new Project(song(track(1, "other_song")), null, 100, false);
+        studio.save(player, active);
+        Project confirmation = studio.project(player, original.song().id());
+        Project changed = new Project(original.song().replace(track(1, "replacement")), null, 100, false);
+        store.save(changed);
+        store.select(owner, active.song().id());
+        assertEquals(ProjectSummary.of(original), ProjectSummary.of(changed));
+        assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, confirmation));
+        verify(store, times(2)).project(owner, original.song().id());
+        verify(store, never()).project(owner, active.song().id());
+        verify(store, never()).summaries(owner);
+        assertEquals(changed, store.project(owner, original.song().id()));
+        assertEquals(active, studio.requireProject(player));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"sound", "instrument", "timing", "volume", "pitch", "gain", "mute", "bpm", "metronome", "pending"})
+    void deletionRejectsContentChangesThatLeaveTheLibrarySummaryUnchanged(String change) throws Exception {
+        Track track = track(1, "original");
+        Track pending = track(1, "pending");
+        Project original = new Project(song(track), pending, 100, false);
+        studio.save(player, original);
+        Project confirmation = studio.project(player, original.song().id());
+        Note note = switch (change) {
+            case "sound" -> new Note(0, "lute", "replacement", 4, 1);
+            case "instrument" -> new Note(0, "flute", "original", 4, 1);
+            case "timing" -> new Note(1, "lute", "original", 4, 1);
+            case "volume" -> new Note(0, "lute", "original", 2, 1);
+            case "pitch" -> new Note(0, "lute", "original", 4, .5f);
+            default -> track.notes().getFirst();
+        };
+        Track replacement = new Track(1, track.lengthTicks(), change.equals("gain") ? .5f : 1,
+                change.equals("mute"), List.of(note));
+        Project changed = new Project(original.song().replace(replacement),
+                change.equals("pending") ? track(1, "new_pending") : pending,
+                change.equals("bpm") ? 120 : 100, change.equals("metronome"));
+        studio.edit(player, changed); awaitSaves();
+        assertEquals(ProjectSummary.of(confirmation), ProjectSummary.of(changed));
+        assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, confirmation));
+        assertEquals(changed, store.project(owner, original.song().id()));
+        assertEquals(changed, studio.requireProject(player));
+    }
+
+    @Test
+    void deletionChecksTheNewerCachedContentAfterItsWriteFails() throws Exception {
+        Project original = new Project(song(track(1, "original")), null, 100, false);
+        studio.save(player, original);
+        Project confirmation = studio.project(player, original.song().id());
+        Project changed = new Project(original.song().replace(track(1, "replacement")), null, 100, false);
+        doThrow(new IOException("Write failed")).when(store).save(changed);
+        studio.edit(player, changed); awaitSaves();
+        assertEquals(original, store.project(owner, original.song().id()));
+        assertEquals(changed, studio.project(player, original.song().id()));
+        assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, confirmation));
+        assertEquals(original, store.project(owner, original.song().id()));
+        assertEquals(changed, studio.requireProject(player));
+        doCallRealMethod().when(store).save(changed);
     }
 
     @Test
@@ -1125,8 +1210,8 @@ class StudioServiceTest {
         Project first = new Project(song(), null, 100, false);
         Project second = new Project(song(), null, 100, false);
         store.save(first); store.save(second);
-        assertEquals(ProjectSummary.of(first), studio.summary(player, first.song().id()));
-        studio.deleteProject(player, ProjectSummary.of(first));
+        assertEquals(first, studio.project(player, first.song().id()));
+        studio.deleteProject(player, first);
         assertEquals(second, studio.requireProject(player));
         studio.quit(player);
         when(server.getPlayer(owner)).thenReturn(null);
@@ -1240,9 +1325,9 @@ class StudioServiceTest {
         Project project = new Project(song(), null, 100, false);
         store.save(project);
         doReturn(java.util.Optional.empty()).when(store).project(owner);
-        assertEquals(ProjectSummary.of(project), studio.summary(player, project.song().id()));
-        assertThrows(IllegalArgumentException.class, () -> studio.summary(player, UUID.randomUUID()));
-        studio.deleteProject(player, ProjectSummary.of(project));
+        assertEquals(project, studio.project(player, project.song().id()));
+        assertThrows(IllegalArgumentException.class, () -> studio.project(player, UUID.randomUUID()));
+        studio.deleteProject(player, project);
         assertNull(studio.project(player));
     }
 

@@ -167,18 +167,22 @@ public final class StudioService {
         }
     }
 
-    public ProjectSummary summary(Player player, UUID id) throws IOException {
-        return listProjects(player).stream().filter(summary -> summary.id().equals(id)).findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("That project is no longer available"));
+    /** Loads only the requested project; a cached version may contain changes not yet written. */
+    public Project project(Player player, UUID id) throws IOException {
+        Project current = projects.get(player.getUniqueId());
+        if (current != null && current.song().id().equals(id)) return current;
+        return store.project(player.getUniqueId(), id);
     }
 
     /** Deletes the project only if it still matches what the player confirmed. */
-    public void deleteProject(Player player, ProjectSummary expected) throws IOException {
+    public void deleteProject(Player player, Project expected) throws IOException {
         requireSaved(player); // A queued write would bring the deleted project back.
-        if (!listProjects(player).contains(expected)) {
+        requireOwner(player, expected);
+        UUID id = expected.song().id();
+        // Summaries omit notes, mix and settings, so they cannot protect a stale confirmation.
+        if (!project(player, id).equals(expected)) {
             throw new IllegalArgumentException("The project changed. Open the delete confirmation again");
         }
-        UUID id = expected.id();
         store.delete(player.getUniqueId(), id);
         Project current = projects.get(player.getUniqueId());
         if (current != null && current.song().id().equals(id)) {
@@ -186,7 +190,7 @@ public final class StudioService {
             unsaved.remove(player.getUniqueId());
             stopPreview(player);
         }
-        player.sendMessage("Deleted '" + expected.title() + "'. Published discs keep their music.");
+        player.sendMessage("Deleted '" + expected.song().title() + "'. Published discs keep their music.");
     }
 
     public List<ProjectSummary> listProjects(Player player) throws IOException {

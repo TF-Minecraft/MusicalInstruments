@@ -4,7 +4,7 @@ import java.util.Comparator;
 import java.util.Objects;
 import java.util.UUID;
 
-/** What the project library shows and deletion confirms, without loading a project's notes. */
+/** What the project library shows, without loading a project's notes. */
 public record ProjectSummary(UUID id, String title, int tracks, int lengthTicks, int pendingSlot) {
     public static final Comparator<ProjectSummary> ORDER = Comparator.comparing(ProjectSummary::title,
             String.CASE_INSENSITIVE_ORDER).thenComparing(ProjectSummary::id);
