@@ -63,6 +63,17 @@ class StudioModelTest {
     }
 
     @Test
+    void aTakeWhoseSavedTrackWasRemovedIsKeptAtFullVolume() {
+        Song original = song(new Track(1, 100, 0.5f, true, List.of(note(0, "original"))));
+        Project project = new Project(original, new Track(1, 50, 1, false, List.of(note(20, "replacement"))), 100, true);
+        assertEquals(0.5f, project.pending().gain());
+        assertTrue(project.pending().muted());
+        Track kept = new Project(original.remove(1), project.pending(), 100, true).accept().song().track(1);
+        assertEquals(1, kept.gain());
+        assertFalse(kept.muted());
+    }
+
+    @Test
     void dataSnapshotsDoNotShareMutableNoteLists() {
         var notes = new ArrayList<>(List.of(note(0, "sample")));
         Track track = new Track(1, 10, 1, false, notes);
