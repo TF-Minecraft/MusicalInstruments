@@ -11,6 +11,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -127,6 +128,16 @@ public final class StudioListener implements Listener {
         // Custom editions require our insertion lifecycle; vanilla discs retain hopper behavior.
         if (studio.discs().custom(event.getItem()) && event.getDestination().getHolder() instanceof Jukebox) {
             event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void extract(InventoryMoveItemEvent event) {
+        // A hopper taking the disc stops its song at once, not at the next once-a-second check.
+        // Hoppers move items constantly, so the cheap item and inventory type checks come first.
+        if (studio.discs().custom(event.getItem()) && event.getSource().getType() == InventoryType.JUKEBOX
+                && event.getSource().getLocation() != null) {
+            studio.stop(event.getSource().getLocation().getBlock());
         }
     }
 

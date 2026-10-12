@@ -303,4 +303,24 @@ class StudioListenerTest {
         listener.hopper(ordinary); assertFalse(ordinary.isCancelled());
     }
 
+    @Test
+    void aHopperTakingARecordingDiscStopsItsJukeboxAtOnce() {
+        var jukebox = mock(org.bukkit.inventory.Inventory.class);
+        var hopper = mock(org.bukkit.inventory.Inventory.class);
+        var location = mock(org.bukkit.Location.class);
+        when(location.getBlock()).thenReturn(block);
+        when(jukebox.getType()).thenReturn(org.bukkit.event.inventory.InventoryType.JUKEBOX);
+        when(hopper.getType()).thenReturn(org.bukkit.event.inventory.InventoryType.HOPPER);
+        when(discs.custom(disc)).thenReturn(true);
+        listener.extract(new org.bukkit.event.inventory.InventoryMoveItemEvent(hopper, disc, jukebox, true));
+        listener.extract(new org.bukkit.event.inventory.InventoryMoveItemEvent(jukebox, disc, hopper, true)); // No location.
+        verify(studio, never()).stop(any(Block.class));
+        when(jukebox.getLocation()).thenReturn(location);
+        listener.extract(new org.bukkit.event.inventory.InventoryMoveItemEvent(jukebox, disc, hopper, true));
+        verify(studio).stop(block);
+        when(discs.custom(disc)).thenReturn(false); // Vanilla discs keep vanilla behaviour.
+        listener.extract(new org.bukkit.event.inventory.InventoryMoveItemEvent(jukebox, disc, hopper, true));
+        verify(studio, times(1)).stop(block);
+    }
+
 }
