@@ -12,12 +12,10 @@ import java.nio.file.StandardCopyOption;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,9 +24,9 @@ import java.util.logging.Logger;
 
 /** Versioned, bounded data files. A failed write never truncates the last saved project. */
 public final class StudioStore {
-    // Enough for a full 12,000-note song plus a replacement take, including escaped names, even in format 1.
+    // Enough for a full 12,000-note song plus a replacement take, even with a distinct long name per note.
     static final int MAX_FILE_BYTES = 32_000_000;
-    // Songs and projects are written in this format; format 1 files remain readable.
+    // Format 1, written by 3.3.0 with a YAML list per note, is not read.
     static final int FORMAT = 2;
     // Neither is a .yml file, so project listings skip them.
     static final String INDEX = "library.index";
@@ -40,9 +38,6 @@ public final class StudioStore {
     private final Path root;
     private final Logger logger;
     private final Clock clock;
-    // Owners already moved off the legacy layout. Both the main thread and the checkpoint
-    // writer use the store, so the set is also the migration lock.
-    private final Set<UUID> migrated = new HashSet<>();
     // Unreadable files already logged, with the size and time they had then, so each is reported once.
     private final Map<Path, String> reported = new ConcurrentHashMap<>();
 
@@ -79,7 +74,6 @@ public final class StudioStore {
     }
 
     public Optional<Project> project(UUID owner) throws IOException {
-        migrate(owner);
         UUID id = selected(owner);
         Path file = id == null ? null : projectFile(owner, id);
         if (file == null || !Files.exists(file)) return Optional.empty();
@@ -93,7 +87,6 @@ public final class StudioStore {
     }
 
     public Project project(UUID owner, UUID id) throws IOException {
-        migrate(owner);
         Path file = projectFile(owner, id);
         if (!Files.exists(file)) throw new IllegalArgumentException("That project is no longer available");
         return decodeProject(file, owner, id);
@@ -133,44 +126,12 @@ public final class StudioStore {
 
     /** Makes an existing project the owner's active one, without rewriting it. */
     public void select(UUID owner, UUID id) throws IOException {
-        migrate(owner);
         if (!Files.exists(projectFile(owner, id))) throw new IllegalArgumentException("That project is no longer available");
         point(owner, id);
     }
 
     private void point(UUID owner, UUID id) throws IOException {
         if (!id.equals(selected(owner))) write(directory(owner).resolve(SELECTED), id.toString().getBytes(StandardCharsets.UTF_8), true);
-    }
-
-    // Earlier versions also kept the selected project whole in projects/<owner>.yml, next to its
-    // per-project copy. The newer of the two becomes the per-project file, once per owner, and the
-    // selection becomes a pointer, so each save writes the project once.
-    private void migrate(UUID owner) throws IOException {
-        synchronized (migrated) {
-            Path legacy = root.resolve("projects").resolve(owner + ".yml");
-            if (migrated.contains(owner)) return;
-            UUID id = null;
-            if (Files.exists(legacy)) {
-                try {
-                    id = decodeProject(legacy, owner, null).song().id();
-                } catch (DamagedFileException ex) {
-                    // Kept for an administrator, but out of the way of the player's other projects.
-                    Path aside = legacy.resolveSibling(owner + ".yml.damaged");
-                    Files.move(legacy, aside, StandardCopyOption.REPLACE_EXISTING);
-                    logger.warning("Moved unreadable studio project " + legacy + " to " + aside + ": " + ex.getMessage());
-                }
-            }
-            if (id != null) {
-                Path file = projectFile(owner, id);
-                Files.createDirectories(file.getParent());
-                if (!Files.exists(file) || Files.getLastModifiedTime(file).compareTo(Files.getLastModifiedTime(legacy)) <= 0) {
-                    write(file, Files.readAllBytes(legacy), true);
-                }
-                point(owner, id);
-                Files.delete(legacy);
-            }
-            migrated.add(owner);
-        }
     }
 
     public void delete(UUID owner, UUID id) throws IOException {
@@ -186,7 +147,6 @@ public final class StudioStore {
     // modification time, so listing parses only files written outside save(). The cache is rebuilt when
     // missing, stale or unreadable; concurrent updates may lose an entry, which costs one reparse later.
     private Map<String, ProjectSummary> index(UUID owner) throws IOException {
-        migrate(owner);
         Path directory = directory(owner);
         Map<String, List<?>> cached = readIndex(directory);
         Map<String, List<?>> fresh = new TreeMap<>();
@@ -280,7 +240,7 @@ public final class StudioStore {
 
     private void writeIndex(Path directory, Map<String, List<?>> entries) {
         YamlConfiguration yaml = new YamlConfiguration();
-        yaml.set("format", 1);
+        yaml.set("format", FORMAT);
         entries.forEach(yaml::set);
         try {
             Files.createDirectories(directory);
@@ -297,8 +257,8 @@ public final class StudioStore {
             if (!song.owner().equals(owner)) {
                 throw new IllegalArgumentException("Project owner mismatch");
             }
-            if (id != null && !song.id().equals(id)) throw new IllegalArgumentException("Project ID mismatch");
-            Track pending = yaml.isSet("pending") ? decodeTrack(map(yaml.get("pending")), yaml.getInt("format") == FORMAT) : null;
+            if (!song.id().equals(id)) throw new IllegalArgumentException("Project ID mismatch");
+            Track pending = yaml.isSet("pending") ? decodeTrack(map(yaml.get("pending"))) : null;
             return new Project(song, pending, yaml.getInt("bpm"), yaml.getBoolean("metronome"));
         } catch (RuntimeException ex) {
             throw new DamagedFileException("Invalid project " + owner, ex);
@@ -320,7 +280,6 @@ public final class StudioStore {
 
     public void save(Project project) throws IOException {
         UUID owner = project.song().owner();
-        migrate(owner);
         Path file = projectFile(owner, project.song().id());
         Files.createDirectories(file.getParent());
         write(file, encodeProject(project), true);
@@ -407,7 +366,7 @@ public final class StudioStore {
         } catch (InvalidConfigurationException ex) {
             throw new DamagedFileException("Invalid studio YAML: " + file.getFileName(), ex);
         }
-        if (yaml.getInt("format") < 1 || yaml.getInt("format") > FORMAT) {
+        if (yaml.getInt("format") != FORMAT) {
             throw new DamagedFileException("Unsupported studio format: " + file.getFileName(), null);
         }
         return yaml;
@@ -471,37 +430,17 @@ public final class StudioStore {
         if (raw.size() > Song.MAX_TRACKS) {
             throw new IllegalArgumentException("Too many tracks");
         }
-        boolean compact = yaml.getInt("format") == FORMAT;
-        List<Track> tracks = raw.stream().map(value -> decodeTrack(map(value), compact)).toList();
+        List<Track> tracks = raw.stream().map(value -> decodeTrack(map(value))).toList();
         return new Song(UUID.fromString(yaml.getString("id")), UUID.fromString(yaml.getString("owner")),
                 yaml.getString("author"), yaml.getString("title"), tracks);
     }
 
-    private Track decodeTrack(Map<?, ?> raw, boolean compact) {
-        List<Note> notes = compact ? compactNotes(raw) : legacyNotes(raw);
+    private Track decodeTrack(Map<?, ?> raw) {
         return new Track(integer(raw.get("slot")), integer(raw.get("length")),
-                number(raw.get("gain")).floatValue(), (Boolean) raw.get("muted"), notes);
+                number(raw.get("gain")).floatValue(), (Boolean) raw.get("muted"), compactNotes(raw));
     }
 
-    // Format 1 wrote each note as a five-item YAML list, about 77 bytes per note.
-    private List<Note> legacyNotes(Map<?, ?> raw) {
-        List<?> entries = list(raw.get("notes"));
-        if (entries.size() > Song.MAX_NOTES) {
-            throw new IllegalArgumentException("Too many notes");
-        }
-        List<Note> notes = new ArrayList<>();
-        for (Object value : entries) {
-            List<?> note = list(value);
-            if (note.size() != 5) {
-                throw new IllegalArgumentException("Invalid note fields");
-            }
-            notes.add(new Note(integer(note.get(0)), text(note.get(1)), text(note.get(2)),
-                    number(note.get(3)).floatValue(), number(note.get(4)).floatValue()));
-        }
-        return notes;
-    }
-
-    // Format 2 lists each track's instrument and sample names once. Each note is one line of
+    // Each track lists its instrument and sample names once. Each note is one line of
     // "<ticks since the previous note> <instrument> <sample> <volume> <pitch>", the names given
     // as positions in that list. One text value per track also parses much faster than a YAML list per note.
     private void encodeNotes(Track track, Map<String, Object> result) {

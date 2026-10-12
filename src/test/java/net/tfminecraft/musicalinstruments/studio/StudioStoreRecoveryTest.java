@@ -93,18 +93,14 @@ class StudioStoreRecoveryTest {
             track.put("slot", slot); yaml.set("tracks", List.of(track)); yaml.save(file.toFile());
             assertThrows(IOException.class, () -> store.song(project.song().id()));
         }
-        for (int mode = 0; mode < 4; mode++) {
+        for (Object format : List.of(1, 3)) { // Format 1 was written by 3.3.0 and is not read.
             YamlConfiguration yaml = new YamlConfiguration(); yaml.loadFromString(valid);
-            yaml.set("format", 1);
-            Map<String, Object> track = new LinkedHashMap<>((Map<String, Object>) yaml.getMapList("tracks").getFirst());
-            if (mode == 0) yaml.set("tracks", Collections.nCopies(9, track));
-            else {
-                track.put("notes", mode == 1 ? Collections.nCopies(Song.MAX_NOTES + 1, List.of(0, "lute", "note", 1, 1))
-                        : mode == 2 ? List.of(List.of(0, "lute")) : List.of(List.of(0, "lute", 7, 1, 1)));
-                yaml.set("tracks", List.of(track));
-            }
+            yaml.set("format", format);
             yaml.save(file.toFile()); assertThrows(IOException.class, () -> store.song(project.song().id()));
         }
+        YamlConfiguration nine = new YamlConfiguration(); nine.loadFromString(valid);
+        nine.set("tracks", Collections.nCopies(9, nine.getMapList("tracks").getFirst()));
+        nine.save(file.toFile()); assertThrows(IOException.class, () -> store.song(project.song().id()));
         String tooMany = String.join("\n", Collections.nCopies(Song.MAX_NOTES + 1, "0 0 1 1.0 1.0"));
         List<Object[]> compact = List.of(
                 new Object[] {List.of("lute", "note"), "0 0 1 1.0"}, // Missing field.
