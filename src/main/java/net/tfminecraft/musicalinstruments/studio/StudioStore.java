@@ -4,6 +4,7 @@ import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.IOException;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -109,7 +110,8 @@ public final class StudioStore {
         Path file = directory(owner).resolve(SELECTED);
         if (!Files.exists(file)) return null;
         try {
-            return UUID.fromString(Files.size(file) > 64 ? "" : Files.readString(file, StandardCharsets.UTF_8).strip());
+            // Invalid UTF-8 becomes replacement characters, which no project ID contains.
+            return UUID.fromString(Files.size(file) > 64 ? "" : new String(Files.readAllBytes(file), StandardCharsets.UTF_8).strip());
         } catch (IllegalArgumentException ex) {
             report(file, "it does not hold a project ID; the next save replaces it");
             return null;
@@ -344,7 +346,8 @@ public final class StudioStore {
         Path file = editionLog(owner);
         List<Long> recent = new ArrayList<>();
         if (!Files.exists(file)) return recent;
-        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+        // Invalid UTF-8 becomes replacement characters, so only those lines are skipped below.
+        for (String line : new String(Files.readAllBytes(file), StandardCharsets.UTF_8).split("\n")) {
             try {
                 long at = Long.parseLong(line.strip());
                 if (at > now - DAY_MILLIS) recent.add(at);
@@ -363,6 +366,8 @@ public final class StudioStore {
         YamlConfiguration yaml = new YamlConfiguration();
         try {
             yaml.loadFromString(Files.readString(file, StandardCharsets.UTF_8));
+        } catch (CharacterCodingException ex) {
+            throw new DamagedFileException("Invalid UTF-8 in studio file: " + file.getFileName(), ex);
         } catch (InvalidConfigurationException ex) {
             throw new DamagedFileException("Invalid studio YAML: " + file.getFileName(), ex);
         }

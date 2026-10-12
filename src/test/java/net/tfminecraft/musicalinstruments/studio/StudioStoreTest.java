@@ -249,6 +249,33 @@ class StudioStoreTest {
     }
 
     @Test
+    void invalidUtf8IsDamagedContentAndLeavesTheLibrarySelectionAndPublishingUsable() throws Exception {
+        byte[] invalid = { (byte) 0xc3, 0x28 };
+        StudioStore store = new StudioStore(directory);
+        Project damaged = project();
+        UUID owner = damaged.song().owner();
+        Project healthy = new Project(new Song(UUID.randomUUID(), owner, "Musician", "Healthy", List.of()), null, 100, false);
+        store.save(healthy);
+        store.save(damaged);
+        Path folder = directory.resolve("projects").resolve(owner.toString());
+        Files.write(folder.resolve(damaged.song().id() + ".yml"), invalid);
+        assertEquals(List.of(ProjectSummary.of(healthy)), store.summaries(owner));
+        assertTrue(store.project(owner).isEmpty()); // The damaged project was the active one.
+        assertThrows(IOException.class, () -> store.project(owner, damaged.song().id()));
+        // A damaged selection is ignored and replaced by the next save.
+        Files.write(folder.resolve(StudioStore.SELECTED), invalid);
+        assertTrue(store.project(owner).isEmpty());
+        store.save(healthy);
+        assertEquals(healthy, store.project(owner).orElseThrow());
+        // A damaged publication log loses only its unreadable lines.
+        Path log = directory.resolve("editions").resolve(owner + ".log");
+        Files.createDirectories(log.getParent());
+        Files.write(log, invalid);
+        store.publishEdition(healthy.song().replace(new Track(1, 10, 1, false, List.of(new Note(0, "lute", "tfmc:lute", 1, 1)))), 1);
+        assertEquals(1, Files.readAllLines(log).size());
+    }
+
+    @Test
     void filenameIdentityMustMatchTheStoredOwnerOrEdition() throws Exception {
         StudioStore store = new StudioStore(directory);
         Project project = project();
