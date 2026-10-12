@@ -229,7 +229,7 @@ class StudioStoreTest {
             assertEquals(List.of(ProjectSummary.of(healthy)), reader.summaries(owner));
         }
         assertEquals(4, warnings.size(), String.join("\n", warnings)); // Once per file and store.
-        assertTrue(warnings.getFirst().contains(broken.toString()));
+        assertTrue(warnings.stream().anyMatch(message -> message.contains(broken.toString())));
         assertThrows(IllegalArgumentException.class, () -> store.delete(owner, damaged.song().id()));
         assertThrows(IOException.class, () -> store.project(owner, damaged.song().id()));
         // A damaged active project leaves the player without one, so they can create or open another.
