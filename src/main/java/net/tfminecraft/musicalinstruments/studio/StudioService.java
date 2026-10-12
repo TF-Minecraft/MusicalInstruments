@@ -50,9 +50,11 @@ public final class StudioService {
     private final Map<UUID, Capture> recordings = new HashMap<>();
     private final Map<UUID, Preview> previews = new HashMap<>();
     private final Map<UUID, Set<String>> privateSounds = new HashMap<>();
-    // Each owner's latest queued write. Every write holds the whole project and the writer runs them
-    // in order, so the latest one alone decides what ends up on disk.
+    // Each owner's latest save. An in-flight snapshot is immutable; pending snapshots of the same
+    // owner share a future and are replaced with the newest project instead of filling the executor.
     private final Map<UUID, CompletableFuture<Void>> pendingSaves = new HashMap<>();
+    // Accessed by the main thread and the writer only while holding this map's monitor.
+    private final Map<UUID, QueuedSave> queuedSaves = new HashMap<>();
     // Owners whose cached project is newer than its files: a write is still queued, or the last one failed.
     // Other cached projects match the disk, so disconnects and shutdown need not write them again.
     private final Set<UUID> unsaved = new HashSet<>();
@@ -69,6 +71,7 @@ public final class StudioService {
     private final ExecutorService checkpointWriter;
     private long clock;
     private boolean closed;
+    private volatile long shutdownDeadline;
 
     public StudioService(InstrumentPlugin plugin, InstrumentManager manager) throws IOException {
         this(plugin, manager, loadSettings(plugin));
@@ -690,17 +693,48 @@ public final class StudioService {
         pendingSaves.put(project.song().owner(), write(project));
     }
 
-    // The single writer runs writes in the order they were queued, so a final take or an edit
-    // always lands after every older checkpoint and edit of the same project.
+    // One queued snapshot per owner, plus the single snapshot currently being written. Changes
+    // arriving during a write go to the tail, letting other owners save before this owner runs again.
     private CompletableFuture<Void> write(Project project) {
-        return CompletableFuture.runAsync(() -> {
+        UUID owner = project.song().owner();
+        synchronized (queuedSaves) {
+            QueuedSave queued = queuedSaves.get(owner);
+            if (queued != null) {
+                queued.project = project;
+                return queued.future;
+            }
+            QueuedSave next = new QueuedSave(project);
+            queuedSaves.put(owner, next);
+            CompletableFuture.runAsync(() -> {
+                Project snapshot;
+                synchronized (queuedSaves) {
+                    queuedSaves.remove(owner);
+                    snapshot = next.project;
+                }
+                saveSnapshot(snapshot);
+            }, checkpointWriter).whenComplete((ignored, error) -> {
+                if (error == null) next.future.complete(null);
+                else next.future.completeExceptionally(error);
+            });
+            return next.future;
+        }
+    }
+
+    private void saveSnapshot(Project project) {
+        try {
             try {
                 store.save(project);
             } catch (IOException ex) {
-                plugin.getLogger().log(Level.SEVERE, "Could not save studio project for " + project.song().owner(), ex);
-                throw new CompletionException(ex);
+                // A failure can appear only after close has checked the pending saves. Retry it
+                // once on this same worker, even after shutdown(), while the close budget remains.
+                long deadline = shutdownDeadline;
+                if (deadline == 0 || System.nanoTime() - deadline >= 0) throw ex;
+                store.save(project);
             }
-        }, checkpointWriter);
+        } catch (IOException ex) {
+            plugin.getLogger().log(Level.SEVERE, "Could not save studio project for " + project.song().owner(), ex);
+            throw new CompletionException(ex);
+        }
     }
 
     private void completeSave(UUID owner, CompletableFuture<Void> pending) {
@@ -745,6 +779,7 @@ public final class StudioService {
 
     public void close() {
         if (closed) return;
+        shutdownDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(SHUTDOWN_WAIT_SECONDS);
         closed = true;
         task.cancel();
         // Observe completed failures before deciding which cached takes need another save.
@@ -785,6 +820,15 @@ public final class StudioService {
     public void failure(Player player, IOException ex) {
         plugin.getLogger().log(Level.SEVERE, "Studio storage operation failed for " + player.getUniqueId(), ex);
         player.sendMessage("Could not read/write the recording. Your disc was preserved; contact a server administrator.");
+    }
+
+    private static final class QueuedSave {
+        private Project project;
+        private final CompletableFuture<Void> future = new CompletableFuture<>();
+
+        private QueuedSave(Project project) {
+            this.project = project;
+        }
     }
 
     private static final class Capture {
