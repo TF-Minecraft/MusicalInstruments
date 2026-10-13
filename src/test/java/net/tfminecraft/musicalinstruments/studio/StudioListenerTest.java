@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class StudioListenerTest {
+    private org.bukkit.plugin.Plugin plugin;
+    private org.bukkit.scheduler.BukkitScheduler scheduler;
     private StudioService studio;
     private StudioListener listener;
     private StudioMenu menu;
@@ -38,7 +40,12 @@ class StudioListenerTest {
         studio = mock(StudioService.class);
         discs = mock(DiscItems.class);
         menu = mock(StudioMenu.class);
-        listener = new StudioListener(studio, menu);
+        plugin = mock(org.bukkit.plugin.Plugin.class);
+        var server = mock(org.bukkit.Server.class);
+        scheduler = mock(org.bukkit.scheduler.BukkitScheduler.class);
+        when(plugin.getServer()).thenReturn(server);
+        when(server.getScheduler()).thenReturn(scheduler);
+        listener = new StudioListener(plugin, studio, menu);
         player = mock(Player.class);
         inventory = mock(PlayerInventory.class);
         block = mock(Block.class);
@@ -304,7 +311,7 @@ class StudioListenerTest {
     }
 
     @Test
-    void aHopperTakingARecordingDiscStopsItsJukeboxAtOnce() {
+    void aHopperTakingARecordingDiscStopsItsJukeboxAfterTheTransfer() {
         var jukebox = mock(org.bukkit.inventory.Inventory.class);
         var hopper = mock(org.bukkit.inventory.Inventory.class);
         var location = mock(org.bukkit.Location.class);
@@ -317,10 +324,64 @@ class StudioListenerTest {
         verify(studio, never()).stop(any(Block.class));
         when(jukebox.getLocation()).thenReturn(location);
         listener.extract(new org.bukkit.event.inventory.InventoryMoveItemEvent(jukebox, disc, hopper, true));
+        verify(studio, never()).stop(any(Block.class));
+        var callback = org.mockito.ArgumentCaptor.forClass(Runnable.class);
+        verify(scheduler).runTask(eq(plugin), callback.capture());
+        var world = mock(org.bukkit.World.class);
+        when(block.getWorld()).thenReturn(world);
+        when(world.isChunkLoaded(0, 0)).thenReturn(true);
+        callback.getValue().run(); // Transfer completed: the jukebox no longer holds the recording.
         verify(studio).stop(block);
         when(discs.custom(disc)).thenReturn(false); // Vanilla discs keep vanilla behaviour.
         listener.extract(new org.bukkit.event.inventory.InventoryMoveItemEvent(jukebox, disc, hopper, true));
         verify(studio, times(1)).stop(block);
+        verify(scheduler, times(1)).runTask(eq(plugin), any(Runnable.class));
+    }
+
+    @Test
+    void aRejectedHopperTransferKeepsTheRestoredDiscPlaying() {
+        var source = mock(org.bukkit.inventory.Inventory.class);
+        var hopper = mock(org.bukkit.inventory.Inventory.class);
+        var location = mock(Location.class);
+        var world = mock(org.bukkit.World.class);
+        when(source.getType()).thenReturn(org.bukkit.event.inventory.InventoryType.JUKEBOX);
+        when(source.getLocation()).thenReturn(location);
+        when(location.getBlock()).thenReturn(block);
+        when(block.getWorld()).thenReturn(world);
+        when(world.isChunkLoaded(0, 0)).thenReturn(true);
+        listener.extract(new org.bukkit.event.inventory.InventoryMoveItemEvent(source, disc, hopper, true));
+        verify(studio, never()).stop(any(Block.class));
+        var callback = org.mockito.ArgumentCaptor.forClass(Runnable.class);
+        verify(scheduler).runTask(eq(plugin), callback.capture());
+        // The destination rejects the transfer and restores the disc after the event.
+        when(box.getRecord()).thenReturn(disc);
+        callback.getValue().run();
+        verify(studio, never()).stop(any(Block.class));
+    }
+
+    @Test
+    void deferredHopperCheckSkipsUnloadedAndReplacedJukeboxes() {
+        var source = mock(org.bukkit.inventory.Inventory.class);
+        var hopper = mock(org.bukkit.inventory.Inventory.class);
+        var location = mock(Location.class);
+        var world = mock(org.bukkit.World.class);
+        when(source.getType()).thenReturn(org.bukkit.event.inventory.InventoryType.JUKEBOX);
+        when(source.getLocation()).thenReturn(location);
+        when(location.getBlock()).thenReturn(block);
+        when(block.getWorld()).thenReturn(world);
+        listener.extract(new org.bukkit.event.inventory.InventoryMoveItemEvent(source, disc, hopper, true));
+        var callback = org.mockito.ArgumentCaptor.forClass(Runnable.class);
+        verify(scheduler).runTask(eq(plugin), callback.capture());
+        callback.getValue().run(); // Chunk unloaded; do not access or reload the block.
+        verify(block, never()).getType();
+        verify(block, never()).getState();
+        when(world.isChunkLoaded(0, 0)).thenReturn(true);
+        when(block.getType()).thenReturn(Material.STONE);
+        callback.getValue().run();
+        when(block.getType()).thenReturn(Material.JUKEBOX);
+        when(block.getState()).thenReturn(mock(org.bukkit.block.BlockState.class));
+        callback.getValue().run();
+        verify(studio, never()).stop(any(Block.class));
     }
 
 }

@@ -19,14 +19,17 @@ import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.event.world.WorldUnloadEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.plugin.Plugin;
 
 import java.io.IOException;
 
 public final class StudioListener implements Listener {
+    private final Plugin plugin;
     private final StudioService studio;
     private final StudioMenu menu;
 
-    public StudioListener(StudioService studio, StudioMenu menu) {
+    public StudioListener(Plugin plugin, StudioService studio, StudioMenu menu) {
+        this.plugin = plugin;
         this.studio = studio;
         this.menu = menu;
     }
@@ -133,11 +136,20 @@ public final class StudioListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void extract(InventoryMoveItemEvent event) {
-        // A hopper taking the disc stops its song at once, not at the next once-a-second check.
+        // A rejected transfer restores the source disc after the event, so check on the next tick.
         // Hoppers move items constantly, so the cheap item and inventory type checks come first.
         if (studio.discs().custom(event.getItem()) && event.getSource().getType() == InventoryType.JUKEBOX
                 && event.getSource().getLocation() != null) {
-            studio.stop(event.getSource().getLocation().getBlock());
+            Block block = event.getSource().getLocation().getBlock();
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                // Do not reload a chunk that unloaded while the transfer completed.
+                if (block.getWorld().isChunkLoaded(block.getX() >> 4, block.getZ() >> 4)
+                        && block.getType() == Material.JUKEBOX
+                        && block.getState() instanceof Jukebox box
+                        && !studio.discs().custom(box.getRecord())) {
+                    studio.stop(block);
+                }
+            });
         }
     }
 

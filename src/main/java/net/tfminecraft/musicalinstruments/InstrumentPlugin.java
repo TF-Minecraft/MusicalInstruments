@@ -69,7 +69,7 @@ public class InstrumentPlugin extends JavaPlugin {
         getCommand("music").setExecutor(musicCommand);
         getCommand("music").setTabCompleter(musicCommand);
         getServer().getPluginManager().registerEvents(studioMenu, this);
-        getServer().getPluginManager().registerEvents(new StudioListener(studio, studioMenu), this);
+        getServer().getPluginManager().registerEvents(new StudioListener(this, studio, studioMenu), this);
 
         InstrumentCommand commandHandler = new InstrumentCommand(this, manager);
         getCommand("instruments").setExecutor(commandHandler);
