@@ -40,6 +40,20 @@ class StudioOwnershipTest {
         return identity;
     }
 
+    static String decision(UUID death, String label, StudioIdentity.Owner source, StudioIdentity.Owner recipient) {
+        long revision = label.startsWith("one") || label.startsWith("revision1") ? 1 : label.startsWith("two") || label.startsWith("revision2") ? 2 : label.startsWith("three") ? 3 : 4;
+        var from = new net.tfminecraft.tlibs.character.CharacterRef(source.account(), source.character());
+        var to = new net.tfminecraft.tlibs.character.CharacterRef(recipient.account(), recipient.character());
+        var property = label.contains("frozen") ? net.tfminecraft.tlibs.character.estate.Recipient.FROZEN : label.contains("waiting") ? net.tfminecraft.tlibs.character.estate.Recipient.WAITING : net.tfminecraft.tlibs.character.estate.Recipient.character(to);
+        return new net.tfminecraft.tlibs.character.estate.EstateDecision(death, from, java.util.Optional.empty(), java.time.Instant.EPOCH, java.util.Optional.empty(), java.util.Optional.empty(), java.util.Optional.empty(), net.tfminecraft.tlibs.character.estate.Recipient.FROZEN, property, net.tfminecraft.tlibs.character.estate.Recipient.FROZEN, net.tfminecraft.tlibs.character.estate.Recipient.SENDER, revision).toString();
+    }
+    List<String> transfer(StudioOwnership ownership, UUID death, String label, StudioIdentity.Owner source, StudioIdentity.Owner recipient, java.util.function.BooleanSupplier guard) throws IOException {
+        return ownership.transfer(death, decision(death, label, source, recipient), source, recipient, guard);
+    }
+    List<String> retained(StudioOwnership ownership, UUID death, String label, StudioIdentity.Owner source) throws IOException {
+        return ownership.retainedReceipts(death, decision(death, label, source, to), source);
+    }
+
     @Test void migrationKeepsEditionBytesAttributionSelectionAndOneReviewedHeir() throws Exception {
         StudioStore store = store(); Project project = project(); Path source = legacy(project);
         Song edition = store.publishEdition(project.song(), 20);
@@ -124,13 +138,13 @@ class StudioOwnershipTest {
         store.saveOwned(from, project); store.saveOwned(to, recipient);
         StudioOwnership ownership = new StudioOwnership(store); UUID death = UUID.randomUUID();
         byte[] authorBytes = Files.readAllBytes(store.projectFile(from.character(), project.song().id()));
-        List<String> moved = ownership.transfer(death, "revision1 exact decision", from, to, () -> true);
+        List<String> moved = transfer(ownership,death, "revision1 exact decision", from, to, () -> true);
         assertEquals(List.of(project.song().id().toString()), moved);
         assertFalse(Files.exists(store.projectFile(from.character(), project.song().id())));
         assertEquals(recipient.song().id(), store.project(to.character()).orElseThrow().song().id());
         assertEquals(project, store.project(to.character(), project.song().id()));
-        assertEquals(moved, new StudioOwnership(store()).transfer(death, "revision1 exact decision", from, to, () -> true));
-        assertEquals(moved, ownership.retainedReceipts(death, "revision2 frozen", from));
+        assertEquals(moved, transfer(new StudioOwnership(store()),death, "revision1 exact decision", from, to, () -> true));
+        assertEquals(moved, retained(ownership,death, "revision2 frozen", from));
         assertArrayEquals(authorBytes, Files.readAllBytes(root.resolve("ownership/backups").resolve(StudioOwnership.hash(authorBytes) + ".yml")));
         var journal = StudioOwnership.read(root.resolve("ownership/estates").resolve(death + ".xml"));
         assertEquals(to.account().toString(), journal.getProperty(project.song().id() + ".to-account"));
@@ -141,14 +155,14 @@ class StudioOwnershipTest {
         StudioStore store = store(); Project project = project(); store.saveOwned(from, project);
         StudioOwnership ownership = new StudioOwnership(store); UUID death = UUID.randomUUID();
         AtomicInteger checks = new AtomicInteger();
-        assertThrows(IOException.class, () -> ownership.transfer(death, "revision1", from, to, () -> checks.incrementAndGet() < 3));
+        assertThrows(IOException.class, () -> transfer(ownership,death, "revision1", from, to, () -> checks.incrementAndGet() < 3));
         assertTrue(Files.exists(store.projectFile(from.character(), project.song().id())));
         assertTrue(Files.exists(store.projectFile(to.character(), project.song().id())));
         assertThrows(StudioOwnership.Conflict.class, () -> ownership.requireWritable(from.character()));
         assertThrows(StudioOwnership.Conflict.class, () -> ownership.requireWritable(to.character()));
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "revision2", from, to, () -> true));
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.retainedReceipts(death, "revision2 frozen", from));
-        assertEquals(List.of(project.song().id().toString()), ownership.transfer(death, "revision1", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "revision2", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership,death, "revision2 frozen", from));
+        assertEquals(List.of(project.song().id().toString()), transfer(ownership,death, "revision1", from, to, () -> true));
         ownership.requireWritable(from.character()); ownership.requireWritable(to.character());
     }
 
@@ -156,9 +170,9 @@ class StudioOwnershipTest {
         StudioStore store = store(); Project project = project(); store.saveOwned(from, project);
         StudioOwnership ownership = new StudioOwnership(store); UUID death = UUID.randomUUID();
         AtomicInteger calls = new AtomicInteger();
-        assertThrows(IOException.class, () -> ownership.transfer(death, "one", from, to, () -> calls.incrementAndGet() == 1));
+        assertThrows(IOException.class, () -> transfer(ownership,death, "one", from, to, () -> calls.incrementAndGet() == 1));
         StudioIdentity.Owner replacement = new StudioIdentity.Owner(UUID.randomUUID(), UUID.randomUUID());
-        assertEquals(List.of(project.song().id().toString()), ownership.transfer(death, "two", from, replacement, () -> true));
+        assertEquals(List.of(project.song().id().toString()), transfer(ownership,death, "two", from, replacement, () -> true));
         assertFalse(Files.exists(store.projectFile(to.character(), project.song().id())));
         assertTrue(Files.exists(store.projectFile(replacement.character(), project.song().id())));
     }
@@ -171,17 +185,17 @@ class StudioOwnershipTest {
             disk.when(() -> DurableFiles.write(eq(destination), any(byte[].class), eq(false))).thenAnswer(call -> {
                 call.callRealMethod(); throw new IOException("crash after destination publication");
             });
-            assertThrows(IOException.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+            assertThrows(IOException.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         }
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "two", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "two", from, to, () -> true));
         Path source = store.projectFile(from.character(), project.song().id());
         try (var disk = mockStatic(DurableFiles.class, CALLS_REAL_METHODS)) {
             byte[] sourceBytes = Files.readAllBytes(source);
             disk.when(() -> DurableFiles.delete(source)).thenAnswer(call -> { call.callRealMethod(); throw new IOException("crash after source removal"); });
             Files.write(source, sourceBytes);
-            assertThrows(IOException.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+            assertThrows(IOException.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         }
-        assertEquals(List.of(project.song().id().toString()), ownership.transfer(death, "one", from, to, () -> true));
+        assertEquals(List.of(project.song().id().toString()), transfer(ownership,death, "one", from, to, () -> true));
     }
 
     @Test void conflictsHoldChangedSourcesRecipientIdsAndReappearingOldRecords() throws Exception {
@@ -189,39 +203,39 @@ class StudioOwnershipTest {
         StudioOwnership ownership = new StudioOwnership(store); UUID death = UUID.randomUUID();
         Path destination = store.projectFile(to.character(), project.song().id()); Files.createDirectories(destination.getParent());
         Files.writeString(destination, "conflicting project");
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         Files.delete(destination);
         Path source = store.projectFile(from.character(), project.song().id()); byte[] original = Files.readAllBytes(source);
         Files.writeString(source, "changed");
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         Files.delete(source);
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, to, () -> true));
-        Files.write(source, original); ownership.transfer(death, "one", from, to, () -> true);
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, to, () -> true));
+        Files.write(source, original); transfer(ownership,death, "one", from, to, () -> true);
         Files.write(source, original);
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "two", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "two", from, to, () -> true));
     }
 
     @Test void journalIdentityMalformedOwnerUnreadableProjectAndEscapedPathsBlock() throws Exception {
         StudioStore store = store(); StudioOwnership ownership = new StudioOwnership(store); UUID death = UUID.randomUUID();
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, from, () -> true));
-        assertThrows(IOException.class, () -> ownership.transfer(death, "one", from, to, () -> false));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, from, () -> true));
+        assertThrows(IOException.class, () -> transfer(ownership,death, "one", from, to, () -> false));
         Project project = project(); store.saveOwned(from, project);
         Path source = store.projectFile(from.character(), project.song().id());
         YamlConfiguration yaml = YamlConfiguration.loadConfiguration(source.toFile()); yaml.set("owner-account", "unknown"); yaml.save(source.toFile());
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         store.save(project); Files.writeString(store.directory(from.character()).resolve("bad.yml"), "bad");
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         Files.delete(store.directory(from.character()).resolve("bad.yml"));
         yaml.set("owner-account", from.account().toString()); yaml.save(source.toFile());
         AtomicInteger checks = new AtomicInteger();
-        assertThrows(IOException.class, () -> ownership.transfer(death, "one", from, to, () -> checks.incrementAndGet() == 1));
+        assertThrows(IOException.class, () -> transfer(ownership,death, "one", from, to, () -> checks.incrementAndGet() == 1));
         Path file = root.resolve("ownership/estates").resolve(death + ".xml");
         var journal = StudioOwnership.read(file); journal.setProperty("from-character", "broken"); StudioOwnership.write(file, journal);
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         journal.setProperty("from-character", from.character().toString()); journal.setProperty(project.song().id() + ".target", "../outside.yml"); StudioOwnership.write(file, journal);
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "two", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "two", from, to, () -> true));
         journal.setProperty("death", UUID.randomUUID().toString()); StudioOwnership.write(file, journal);
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         journal.setProperty("format", "99"); StudioOwnership.write(file, journal);
         assertThrows(StudioOwnership.Conflict.class, () -> StudioOwnership.read(file));
     }
@@ -261,21 +275,21 @@ class StudioOwnershipTest {
     @Test void aFrozenRevisionCancelsOnlyAnUntouchedPlanAndPreservesPreviousReceipts() throws Exception {
         StudioStore store = store(); Project project = project(); store.saveOwned(from, project);
         StudioOwnership ownership = new StudioOwnership(store); UUID death = UUID.randomUUID(); AtomicInteger checks = new AtomicInteger();
-        assertThrows(IOException.class, () -> ownership.transfer(death, "one", from, to, () -> checks.incrementAndGet() == 1));
-        assertEquals(List.of(), ownership.retainedReceipts(death, "one", from));
+        assertThrows(IOException.class, () -> transfer(ownership,death, "one", from, to, () -> checks.incrementAndGet() == 1));
+        assertEquals(List.of(), retained(ownership,death, "one", from));
         ownership.requireWritable(UUID.randomUUID());
-        assertEquals(List.of(), ownership.retainedReceipts(death, "two frozen", from)); ownership.requireWritable(from.character());
+        assertEquals(List.of(), retained(ownership,death, "two frozen", from)); ownership.requireWritable(from.character());
         checks.set(0);
-        assertThrows(IOException.class, () -> ownership.transfer(death, "three", from, to, () -> checks.incrementAndGet() < 3));
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.retainedReceipts(death, "four frozen", from));
-        assertEquals(List.of(project.song().id().toString()), ownership.transfer(death, "three", from, to, () -> true));
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.retainedReceipts(death, "three", new StudioIdentity.Owner(account, UUID.randomUUID())));
+        assertThrows(IOException.class, () -> transfer(ownership,death, "three", from, to, () -> checks.incrementAndGet() < 3));
+        assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership,death, "four frozen", from));
+        assertEquals(List.of(project.song().id().toString()), transfer(ownership,death, "three", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership,death, "three", new StudioIdentity.Owner(account, UUID.randomUUID())));
     }
 
     @Test void corruptManifestsAndMismatchedRecipientPayloadsAreBlockedBeforePublication() throws Exception {
         StudioStore store = store(); Project project = project(); store.saveOwned(from, project);
         StudioOwnership ownership = new StudioOwnership(store); UUID death = UUID.randomUUID(); AtomicInteger checks = new AtomicInteger();
-        assertThrows(IOException.class, () -> ownership.transfer(death, "one", from, to, () -> checks.incrementAndGet() == 1));
+        assertThrows(IOException.class, () -> transfer(ownership,death, "one", from, to, () -> checks.incrementAndGet() == 1));
         Path file = root.resolve("ownership/estates").resolve(death + ".xml"); var valid = StudioOwnership.read(file); String id = project.song().id().toString();
         for (String field : List.of("kind", id + ".state", id + ".before", id + ".before-hash", id + ".after-hash", id + ".to-account", id + ".to-character")) {
             var changed = new java.util.Properties(); changed.putAll(valid); changed.setProperty(field, "invalid"); StudioOwnership.write(file, changed);
@@ -291,14 +305,14 @@ class StudioOwnershipTest {
         }
         for (String target : List.of(valid.getProperty(id + ".source"), "character-projects/" + UUID.randomUUID() + "/" + id + ".yml")) {
             var changed = new java.util.Properties(); changed.putAll(valid); changed.setProperty(id + ".target", target); StudioOwnership.write(file, changed);
-            assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+            assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         }
         var changed = new java.util.Properties(); changed.putAll(valid);
         var after = RawYaml.read(java.util.Base64.getDecoder().decode(changed.getProperty(id + ".after")));
         UUID otherAccount = UUID.randomUUID(); changed.setProperty(id + ".to-account", otherAccount.toString()); after.put("owner-account", otherAccount.toString());
         byte[] bytes = RawYaml.bytes(after); changed.setProperty(id + ".after", java.util.Base64.getEncoder().encodeToString(bytes)); changed.setProperty(id + ".after-hash", StudioOwnership.hash(bytes));
         StudioOwnership.write(file, changed);
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         Files.writeString(file, "broken XML"); assertThrows(StudioOwnership.Conflict.class, () -> StudioOwnership.read(file));
     }
 
@@ -308,17 +322,17 @@ class StudioOwnershipTest {
         Path backup = root.resolve("ownership/backups").resolve(StudioOwnership.hash(original) + ".yml");
         Files.createDirectories(backup.getParent()); Files.writeString(backup, "tampered backup");
         StudioOwnership ownership = new StudioOwnership(store);
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(UUID.randomUUID(), "one", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,UUID.randomUUID(), "one", from, to, () -> true));
         Files.delete(backup);
         for (String field : List.of("id", "owner-character")) {
             var raw = RawYaml.read(original); raw.put(field, UUID.randomUUID().toString()); Files.write(source, RawYaml.bytes(raw));
-            assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(UUID.randomUUID(), "one", from, to, () -> true));
+            assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,UUID.randomUUID(), "one", from, to, () -> true));
         }
         Files.write(source, original);
         UUID death = UUID.randomUUID(); AtomicInteger calls = new AtomicInteger();
-        assertThrows(IOException.class, () -> ownership.transfer(death, "one", from, to, () -> calls.incrementAndGet() < 3));
+        assertThrows(IOException.class, () -> transfer(ownership,death, "one", from, to, () -> calls.incrementAndGet() < 3));
         Files.delete(source); Files.delete(store.projectFile(to.character(), project.song().id()));
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, to, () -> true));
     }
 
     @Test void pendingDestinationCannotBeCancelledByAChangedFrozenDecisionEvenBeforeTheReceiptWrites() throws Exception {
@@ -326,9 +340,9 @@ class StudioOwnershipTest {
         StudioOwnership ownership = new StudioOwnership(store); UUID death = UUID.randomUUID(); Path target = store.projectFile(to.character(), project.song().id());
         try (var disk = mockStatic(DurableFiles.class, CALLS_REAL_METHODS)) {
             disk.when(() -> DurableFiles.write(eq(target), any(byte[].class), eq(false))).thenAnswer(call -> { call.callRealMethod(); throw new IOException("after publication"); });
-            assertThrows(IOException.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+            assertThrows(IOException.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         }
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.retainedReceipts(death, "two frozen", from));
+        assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership,death, "two frozen", from));
     }
 
     @Test void strictOwnershipPublicationsRefuseAFileSystemWithoutAtomicMoves() throws Exception {
@@ -366,22 +380,22 @@ class StudioOwnershipTest {
     @Test void validButDifferentJournalTestatorsAndUnrecognizedFilesAreHeld() throws Exception {
         StudioStore store = store(); Project project = project(); store.saveOwned(from, project);
         StudioOwnership ownership = new StudioOwnership(store); UUID death = UUID.randomUUID(); AtomicInteger checks = new AtomicInteger();
-        assertThrows(IOException.class, () -> ownership.transfer(death, "one", from, to, () -> checks.incrementAndGet() == 1));
+        assertThrows(IOException.class, () -> transfer(ownership,death, "one", from, to, () -> checks.incrementAndGet() == 1));
         Path file = root.resolve("ownership/estates").resolve(death + ".xml");
         var different = new StudioIdentity.Owner(account, UUID.randomUUID());
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", different, to, () -> true));
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.retainedReceipts(death, "one", different));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", different, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership,death, "one", different));
         var journal = StudioOwnership.read(file);
         journal.setProperty("death", UUID.randomUUID().toString()); StudioOwnership.write(file, journal);
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.retainedReceipts(death, "one", from));
+        assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership,death, "one", from));
         journal.setProperty("death", death.toString());
         journal.setProperty("from-character", UUID.randomUUID().toString()); StudioOwnership.write(file, journal);
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, to, () -> true));
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.retainedReceipts(death, "one", from));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership,death, "one", from));
         journal.setProperty("death", UUID.randomUUID().toString()); StudioOwnership.write(file, journal);
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.retainedReceipts(death, "one", from));
+        assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership,death, "one", from));
         Path bad = store.directory(from.character()).resolve("0-not-a-uuid.yml"); Files.writeString(bad, "unreadable identity");
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(UUID.randomUUID(), "new", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,UUID.randomUUID(), "new", from, to, () -> true));
     }
 
     @Test void wrongAccountOrCharacterAuthorityCannotEditAProjectEvenWhenItsDirectoryIsKnown() throws Exception {
@@ -402,11 +416,11 @@ class StudioOwnershipTest {
             disk.when(() -> Files.createLink(eq(target), any(Path.class))).thenAnswer(call -> {
                 Files.write(target, rival); return call.callRealMethod();
             });
-            assertThrows(java.nio.file.FileAlreadyExistsException.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+            assertThrows(java.nio.file.FileAlreadyExistsException.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         }
         assertArrayEquals(rival, Files.readAllBytes(target));
         assertTrue(Files.exists(store.projectFile(from.character(), project.song().id())));
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         try (var disk = mockStatic(Files.class, CALLS_REAL_METHODS)) {
             disk.when(() -> Files.createLink(any(Path.class), any(Path.class))).thenThrow(new UnsupportedOperationException("unsupported links"));
             assertThrows(IOException.class, () -> DurableFiles.write(root.resolve("unsupported"), rival, false));
@@ -432,14 +446,14 @@ class StudioOwnershipTest {
     @Test void replayRejectsInRootWrongSourcesAndFullReferenceOrPayloadAuthorityChanges() throws Exception {
         StudioStore store = store(); Project project = project(); store.saveOwned(from, project);
         var ownership = new StudioOwnership(store); UUID death = UUID.randomUUID(); var calls = new AtomicInteger();
-        assertThrows(IOException.class, () -> ownership.transfer(death, "one", from, to, () -> calls.incrementAndGet() == 1));
+        assertThrows(IOException.class, () -> transfer(ownership,death, "one", from, to, () -> calls.incrementAndGet() == 1));
         Path file = root.resolve("ownership/estates").resolve(death + ".xml");
         var original = StudioOwnership.read(file); String id = project.song().id().toString();
         Path wrongSource = store.projectFile(UUID.randomUUID(), project.song().id()); Files.createDirectories(wrongSource.getParent());
         byte[] sourceBytes = Files.readAllBytes(store.projectFile(from.character(), project.song().id())); Files.write(wrongSource, sourceBytes);
         var changed = new java.util.Properties(); changed.putAll(original); changed.setProperty(id + ".source", root.relativize(wrongSource).toString());
         StudioOwnership.write(file, changed);
-        assertThrows(StudioOwnership.Conflict.class, () -> ownership.transfer(death, "one", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership,death, "one", from, to, () -> true));
         assertArrayEquals(sourceBytes, Files.readAllBytes(wrongSource));
         for (String field : List.of(id + ".from-account", id + ".from-character")) {
             changed = new java.util.Properties(); changed.putAll(original); changed.setProperty(field, UUID.randomUUID().toString()); StudioOwnership.write(file, changed);
@@ -461,4 +475,62 @@ class StudioOwnershipTest {
         }
     }
 
+    @Test void restoredSourceBlocksWaitingAndFrozenReceiptsAcrossRestartWithoutChangingAnyFile() throws Exception {
+        var store = store(); var project = project(); store.saveOwned(from, project); var ownership = new StudioOwnership(store); UUID death = UUID.randomUUID();
+        Path source = store.projectFile(from.character(), project.song().id()); byte[] original = Files.readAllBytes(source);
+        transfer(ownership, death, "one", from, to, () -> true); Path target = store.projectFile(to.character(), project.song().id()); byte[] moved = Files.readAllBytes(target); Path file = root.resolve("ownership/estates/" + death + ".xml"); byte[] receipt = Files.readAllBytes(file);
+        Files.write(source, original);
+        for (String label : List.of("two waiting", "three frozen")) {
+            assertThrows(StudioOwnership.Conflict.class, () -> retained(new StudioOwnership(store()), death, label, from));
+            assertArrayEquals(original, Files.readAllBytes(source)); assertArrayEquals(moved, Files.readAllBytes(target)); assertArrayEquals(receipt, Files.readAllBytes(file));
+        }
+    }
+    @Test void everyHistoricalReceiptBindsDeathFullReferencesRecipientAndSupportedRevision() throws Exception {
+        var store = store(); var project = project(); store.saveOwned(from, project); var ownership = new StudioOwnership(store); UUID death = UUID.randomUUID();
+        transfer(ownership, death, "one", from, to, () -> true); Path file = root.resolve("ownership/estates/" + death + ".xml"); var valid = StudioOwnership.read(file); String id = project.song().id().toString(); Path target = store.projectFile(to.character(), project.song().id()); byte[] original = Files.readAllBytes(target);
+        for (String field : List.of("to-account", "to-character")) {
+            var changed = new java.util.Properties(); changed.putAll(valid); String value = UUID.randomUUID().toString(); changed.setProperty(id + "." + field, value);
+            var after = RawYaml.read(java.util.Base64.getDecoder().decode(changed.getProperty(id + ".after"))); after.put(field.replace("to-", "owner-"), value); byte[] bytes = RawYaml.bytes(after); changed.setProperty(id + ".after", java.util.Base64.getEncoder().encodeToString(bytes)); changed.setProperty(id + ".after-hash", StudioOwnership.hash(bytes));
+            StudioOwnership.write(file, changed); byte[] bad = Files.readAllBytes(file);
+            assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership, death, "two frozen", from)); assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership, death, "two", from, to, () -> true)); assertArrayEquals(bad, Files.readAllBytes(file)); assertArrayEquals(original, Files.readAllBytes(target));
+        }
+        for (String suffix : List.of("-1", "01", "9223372036854775808")) {
+            var changed = new java.util.Properties(); changed.putAll(valid); changed.setProperty(id + ".decision", changed.getProperty(id + ".decision").replace(", revision=1]", ", revision=" + suffix + "]")); StudioOwnership.write(file, changed); assertThrows(StudioOwnership.Conflict.class, () -> StudioOwnership.read(file));
+        }
+        for (String field : List.of("death", "revision", "decision")) {
+            var changed = new java.util.Properties(); changed.putAll(valid); changed.setProperty(field.equals("death") ? field : id + "." + field, field.equals("decision") ? "wrong" : field.equals("revision") ? "2" : UUID.randomUUID().toString()); StudioOwnership.write(file, changed); assertThrows(StudioOwnership.Conflict.class, () -> StudioOwnership.read(file));
+        }
+        var changed = new java.util.Properties(); changed.putAll(valid); changed.setProperty(id + ".decision", changed.getProperty(id + ".decision").replace(from.account().toString(), UUID.randomUUID().toString())); StudioOwnership.write(file, changed); assertThrows(StudioOwnership.Conflict.class, () -> StudioOwnership.read(file));
+        StudioOwnership.write(file, valid); assertEquals(List.of(id), retained(new StudioOwnership(store()), death, "two waiting", from));
+        UUID misplaced = UUID.randomUUID(); Files.copy(file, root.resolve("ownership/estates/" + misplaced + ".xml"));
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership, misplaced, "two", from, to, () -> true));
+        assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership, misplaced, "two frozen", from));
+    }
+    @Test void hashConsistentOwnershipPlanCannotChangeTitlesTracksOrUnknownNestedNullMetadata() throws Exception {
+        var store = store(); var project = project(); store.saveOwned(from, project); Path source = store.projectFile(from.character(), project.song().id());
+        var raw = RawYaml.read(Files.readAllBytes(source)); var future = new java.util.LinkedHashMap<String,Object>(); future.put("kept", null); future.put("nested", java.util.Arrays.asList(null, "value")); future.put("binary", new byte[]{0, 1, 2}); raw.put("future", future); Files.write(source, RawYaml.bytes(raw)); byte[] original = Files.readAllBytes(source);
+        var ownership = new StudioOwnership(store); UUID death = UUID.randomUUID(); AtomicInteger checks = new AtomicInteger(); assertThrows(IOException.class, () -> transfer(ownership, death, "one", from, to, () -> checks.incrementAndGet() == 1)); Path file = root.resolve("ownership/estates/" + death + ".xml"); var valid = StudioOwnership.read(file); String id = project.song().id().toString();
+        for (String field : List.of("title", "tracks", "future")) {
+            var changed = new java.util.Properties(); changed.putAll(valid); var after = RawYaml.read(java.util.Base64.getDecoder().decode(changed.getProperty(id + ".after"))); after.put(field, "altered content"); byte[] bytes = RawYaml.bytes(after); changed.setProperty(id + ".after", java.util.Base64.getEncoder().encodeToString(bytes)); changed.setProperty(id + ".after-hash", StudioOwnership.hash(bytes)); StudioOwnership.write(file, changed); byte[] evidence = Files.readAllBytes(file);
+            assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership, death, "one", from, to, () -> true)); assertThrows(StudioOwnership.Conflict.class, () -> ownership.requireWritable(from.character())); assertArrayEquals(original, Files.readAllBytes(source)); assertArrayEquals(evidence, Files.readAllBytes(file)); assertFalse(Files.exists(store.projectFile(to.character(), project.song().id())));
+        }
+        StudioOwnership.write(file, valid); transfer(ownership, death, "one", from, to, () -> true); var moved = RawYaml.read(Files.readAllBytes(store.projectFile(to.character(), project.song().id()))); var movedFuture = (Map<?,?>) moved.get("future"); assertTrue(movedFuture.containsKey("kept")); assertNull(movedFuture.get("kept")); assertEquals(future.get("nested"), movedFuture.get("nested")); assertArrayEquals((byte[]) future.get("binary"), (byte[]) movedFuture.get("binary")); assertEquals(raw.get("title"), moved.get("title")); assertEquals(raw.get("tracks"), moved.get("tracks"));
+    }
+    @Test void duplicateXmlUnsupportedPayloadSchemasAndHistoricalTargetPathsBlockBeforeAnyMutation() throws Exception {
+        var store = store(); var project = project(); store.saveOwned(from, project); var ownership = new StudioOwnership(store); UUID death = UUID.randomUUID(); transfer(ownership, death, "one", from, to, () -> true);
+        Path file = root.resolve("ownership/estates/" + death + ".xml"); var valid = StudioOwnership.read(file); String id = project.song().id().toString(); Path target = store.projectFile(to.character(), project.song().id()); byte[] original = Files.readAllBytes(target);
+        String xml = Files.readString(file); Files.writeString(file, xml.replace("</properties>", "<entry key=\"format\">1</entry></properties>")); byte[] duplicate = Files.readAllBytes(file);
+        assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership, death, "two frozen", from)); assertArrayEquals(duplicate, Files.readAllBytes(file));
+        for (String part : List.of("before", "after")) for (Object format : List.of(1, "2", 2.0, true)) {
+            var changed = new java.util.Properties(); changed.putAll(valid); var raw = RawYaml.read(java.util.Base64.getDecoder().decode(changed.getProperty(id + "." + part))); raw.put("format", format); byte[] bytes = RawYaml.bytes(raw); changed.setProperty(id + "." + part, java.util.Base64.getEncoder().encodeToString(bytes)); changed.setProperty(id + "." + part + "-hash", StudioOwnership.hash(bytes)); StudioOwnership.write(file, changed); byte[] evidence = Files.readAllBytes(file);
+            assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership, death, "two waiting", from)); assertArrayEquals(evidence, Files.readAllBytes(file)); assertArrayEquals(original, Files.readAllBytes(target));
+        }
+        var changed = new java.util.Properties(); changed.putAll(valid); changed.setProperty(id + ".target", "character-projects/" + UUID.randomUUID() + "/" + id + ".yml"); StudioOwnership.write(file, changed); byte[] evidence = Files.readAllBytes(file);
+        assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership, death, "two frozen", from)); assertThrows(StudioOwnership.Conflict.class, () -> ownership.requireWritable(to.character())); assertArrayEquals(evidence, Files.readAllBytes(file)); assertArrayEquals(original, Files.readAllBytes(target));
+    }
+    @Test void anotherAccountCannotAddressTheSameCharacterFolderAsSourceAndRecipient() throws Exception {
+        var store = store(); var project = project(); store.saveOwned(from, project); var ownership = new StudioOwnership(store); UUID death = UUID.randomUUID(); var wrong = new StudioIdentity.Owner(UUID.randomUUID(), from.character()); Path source = store.projectFile(from.character(), project.song().id()); byte[] original = Files.readAllBytes(source);
+        assertThrows(StudioOwnership.Conflict.class, () -> transfer(ownership, death, "one", from, wrong, () -> true)); assertArrayEquals(original, Files.readAllBytes(source));
+        Path file = root.resolve("ownership/estates/" + death + ".xml"); byte[] evidence = Files.readAllBytes(file); assertThrows(StudioOwnership.Conflict.class, () -> retained(ownership, death, "two frozen", from)); assertArrayEquals(evidence, Files.readAllBytes(file)); assertArrayEquals(original, Files.readAllBytes(source));
+    }
 }

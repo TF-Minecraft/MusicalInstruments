@@ -72,7 +72,8 @@ class StudioCharacterTest {
         var to = new StudioIdentity.Owner(UUID.randomUUID(), UUID.randomUUID());
         for (int i = 0; i < 36; i++) store.saveOwned(to, new Project(new Song(UUID.randomUUID(), to.account(), "Heir", "Existing " + i, List.of()), null, 100, false));
         for (int i = 0; i < 2; i++) store.saveOwned(from, new Project(new Song(UUID.randomUUID(), from.account(), "Author", "Inherited " + i, List.of()), null, 100, false));
-        new StudioOwnership(store).transfer(UUID.randomUUID(), "decision", from, to, () -> true);
+        UUID death = UUID.randomUUID();
+        new StudioOwnership(store).transfer(death, StudioOwnershipTest.decision(death, "one", from, to), from, to, () -> true);
         var plugin = mock(InstrumentPlugin.class); var server = mock(Server.class); var scheduler = mock(BukkitScheduler.class);
         when(plugin.getServer()).thenReturn(server); when(server.getScheduler()).thenReturn(scheduler);
         when(scheduler.runTaskTimer(any(), any(Runnable.class), anyLong(), anyLong())).thenReturn(mock(BukkitTask.class));

@@ -105,6 +105,7 @@ final class StudioOwnership {
     List<String> transfer(UUID death, String exactDecision, StudioIdentity.Owner from, StudioIdentity.Owner to,
                           BooleanSupplier guard) throws IOException {
         if (from.equals(to)) throw new Conflict("Estate recipient is the testator");
+        long revision = validateDecision(exactDecision, death, from, to);
         Path file = root.resolve("ownership/estates").resolve(death + ".xml");
         Properties journal = read(file);
         if (journal.isEmpty()) {
@@ -124,8 +125,6 @@ final class StudioOwnership {
                         || Files.exists(path(journal.getProperty(id + ".target"))))
                     throw new Conflict("Stale partial transfer needs staff recovery: " + id);
                 removeEntry(journal, id);
-            } else if (!to.equals(owner(journal, id + ".to"))) {
-                throw new Conflict("The planned recipient differs from the current exact decision");
             }
         }
         if (!guard.getAsBoolean()) throw new IOException("Estate decision no longer holds");
@@ -145,6 +144,7 @@ final class StudioOwnership {
             journal.setProperty(id + ".from-account", from.account().toString());
             journal.setProperty(id + ".from-character", from.character().toString());
             journal.setProperty(id + ".decision", exactDecision);
+            journal.setProperty(id + ".revision", Long.toString(revision));
         }
         write(file, journal);
         for (String id : ids(journal)) {
@@ -158,6 +158,11 @@ final class StudioOwnership {
         Properties journal = read(file);
         if (!journal.isEmpty() && (!death.toString().equals(journal.getProperty("death")) || !from.equals(owner(journal, "from"))))
             throw new Conflict("Estate journal identity differs from this death");
+        for (Path source : projects(store.directory(from.character()))) {
+            String id = source.getFileName().toString().replace(".yml", "");
+            if ("moved".equals(journal.getProperty(id + ".state")))
+                throw new Conflict("Transferred project reappeared at its previous owner: " + id);
+        }
         for (String id : ids(journal)) {
             if ("moved".equals(journal.getProperty(id + ".state"))) continue;
             if (!exactDecision.equals(journal.getProperty(id + ".decision"))) {
@@ -168,6 +173,18 @@ final class StudioOwnership {
         }
         if (!journal.isEmpty()) write(file, journal);
         return ids(journal).stream().filter(id -> "moved".equals(journal.getProperty(id + ".state"))).toList();
+    }
+
+    private static long validateDecision(String decision, UUID death, StudioIdentity.Owner from, StudioIdentity.Owner to) throws IOException {
+        var suffix = java.util.regex.Pattern.compile(", revision=(0|[1-9][0-9]*)]$").matcher(decision);
+        if (!decision.startsWith("EstateDecision[deathId=" + death + ", testator=" + reference(from) + ", diedAt=")
+                || !decision.contains(", property=Character[ref=" + reference(to) + "], guildLocks=") || !suffix.find())
+            throw new Conflict("Project plan differs from its captured full decision");
+        try { return Long.parseLong(suffix.group(1)); }
+        catch (NumberFormatException ex) { throw new Conflict("Unsupported project estate revision"); }
+    }
+    private static String reference(StudioIdentity.Owner owner) {
+        return "CharacterRef[ownerId=" + owner.account() + ", characterId=" + owner.character() + "]";
     }
 
     private void plan(Properties journal, String id, Path source, Path target, byte[] bytes, StudioIdentity.Owner to) throws IOException {
@@ -194,9 +211,6 @@ final class StudioOwnership {
         Path source = path(journal.getProperty(id + ".source"));
         Path target = path(journal.getProperty(id + ".target"));
         if (source.equals(target)) throw new Conflict("Source and destination refer to the same project");
-        StudioIdentity.Owner to = owner(journal, id + ".to");
-        if (!target.equals(store.projectFile(to.character(), UUID.fromString(id)).normalize()))
-            throw new Conflict("Destination path differs from its planned character");
         if (Files.exists(source) && !hash(Files.readAllBytes(source)).equals(journal.getProperty(id + ".before-hash")))
             throw new Conflict("Project changed after ownership planning: " + source);
         if (!Files.exists(source) && "planned".equals(journal.getProperty(id + ".state")))
@@ -253,11 +267,7 @@ final class StudioOwnership {
             throw new Conflict("Legacy projects for this character remain held for staff");
     }
 
-    private Path path(String relative) throws Conflict {
-        Path result = root.resolve(relative).normalize();
-        if (!result.startsWith(root.normalize())) throw new Conflict("Invalid ownership journal path");
-        return result;
-    }
+    private Path path(String relative) { return root.resolve(relative).normalize(); }
 
     private static StudioIdentity.Owner owner(Properties values, String prefix) throws Conflict {
         try { return new StudioIdentity.Owner(UUID.fromString(values.getProperty(prefix + "-account")),
@@ -266,10 +276,19 @@ final class StudioOwnership {
     }
 
     static Properties read(Path file) throws IOException {
-        Properties result = new Properties();
+        class Journal extends Properties {
+            boolean loading;
+            @Override public synchronized Object put(Object key, Object value) {
+                if (loading && containsKey(key)) throw new IllegalArgumentException("Duplicate ownership XML key");
+                return super.put(key, value);
+            }
+        }
+        Journal result = new Journal();
         if (Files.exists(file)) try (var input = Files.newInputStream(file)) {
+            result.loading = true;
             try { result.loadFromXML(input); }
-            catch (java.util.InvalidPropertiesFormatException ex) { throw new Conflict("Unreadable ownership journal"); }
+            catch (java.util.InvalidPropertiesFormatException | IllegalArgumentException ex) { throw new Conflict("Unreadable ownership journal"); }
+            finally { result.loading = false; }
             if (!"1".equals(result.getProperty("format"))) throw new Conflict("Unsupported ownership journal format");
             String kind = result.getProperty("kind");
             if (!"migration".equals(kind) && !"estate".equals(kind)) throw new Conflict("Unknown ownership journal kind");
@@ -291,6 +310,9 @@ final class StudioOwnership {
                     if (result.getProperty(id + ".source") == null || result.getProperty(id + ".target") == null)
                         throw new Conflict("Ownership publication path missing");
                     var before = yaml(Base64.getDecoder().decode(result.getProperty(id + ".before")));
+                    if (!Integer.valueOf(StudioStore.FORMAT).equals(before.get("format"))
+                            || !Integer.valueOf(StudioStore.FORMAT).equals(after.get("format")))
+                        throw new Conflict("Unsupported project payload schema");
                     if (!id.equals(before.get("id"))) throw new Conflict("Planned source ID differs from its payload");
                     Path expectedSource;
                     if ("estate".equals(kind)) {
@@ -299,6 +321,8 @@ final class StudioOwnership {
                                 || !from.account().toString().equals(before.get("owner-account"))
                                 || !from.character().toString().equals(before.get("owner-character")))
                             throw new Conflict("Planned source authority differs from its payload");
+                        if (!Long.toString(validateDecision(result.getProperty(id + ".decision"), UUID.fromString(result.getProperty("death")), from, to))
+                                .equals(result.getProperty(id + ".revision"))) throw new Conflict("Project revision differs from its captured decision");
                         expectedSource = Path.of("character-projects", from.character().toString(), id + ".yml");
                     } else {
                         UUID account = UUID.fromString(result.getProperty("from-account"));
@@ -306,8 +330,15 @@ final class StudioOwnership {
                             throw new Conflict("Planned legacy authority differs from its payload");
                         expectedSource = Path.of("projects", account.toString(), id + ".yml");
                     }
-                    if (!expectedSource.equals(Path.of(result.getProperty(id + ".source"))))
-                        throw new Conflict("Source path differs from its planned owner");
+                    var expected = new java.util.LinkedHashMap<>(before);
+                    expected.put("owner-account", to.account().toString()); expected.put("owner-character", to.character().toString());
+                    if (!java.util.Arrays.equals(RawYaml.bytes(expected), RawYaml.bytes(after)))
+                        throw new Conflict("Ownership plan changes project content or unrelated metadata");
+                    if (expectedSource.equals(Path.of("character-projects", to.character().toString(), id + ".yml")))
+                        throw new Conflict("Source and destination refer to the same project");
+                    if (!expectedSource.equals(Path.of(result.getProperty(id + ".source")))
+                            || !Path.of("character-projects", to.character().toString(), id + ".yml").equals(Path.of(result.getProperty(id + ".target"))))
+                        throw new Conflict("Project path differs from its planned owner");
                 }
             } catch (IllegalArgumentException | NullPointerException ex) { throw new Conflict("Malformed ownership publication record"); }
         }
