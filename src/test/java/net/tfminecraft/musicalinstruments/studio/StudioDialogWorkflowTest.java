@@ -41,6 +41,9 @@ class StudioDialogWorkflowTest {
 
     @BeforeEach
     void setup() throws Exception {
+        when(studio.token(any())).thenAnswer(call -> TestIdentity.INSTANCE.current(call.getArgument(0, Player.class)).orElseThrow());
+        when(studio.current(any(), any())).thenAnswer(call -> TestIdentity.INSTANCE.current(call.getArgument(0, StudioIdentity.Token.class))
+                && call.getArgument(0, StudioIdentity.Token.class).owner().account().equals(call.getArgument(1, Player.class).getUniqueId()));
         when(player.getUniqueId()).thenReturn(UUID.randomUUID());
         when(player.isOnline()).thenReturn(true);
         when(plugin.isEnabled()).thenReturn(true);
@@ -225,4 +228,15 @@ class StudioDialogWorkflowTest {
             instances.close();
         }
     }
+    @Test void aDeferredDialogResponseCannotCreateAProjectAfterTheSessionChangesOnTheSameAccount() throws Exception {
+        try (Harness h = new Harness()) {
+            dialogs.create(player, null);
+            var response = mock(DialogResponseView.class); when(response.getText("title")).thenReturn("Must not create");
+            h.callbacks.getFirst().accept(response, player);
+            when(studio.current(any(), eq(player))).thenReturn(false);
+            queued.removeFirst().run();
+            verify(studio, never()).create(any(), anyString(), anyBoolean());
+        }
+    }
+
 }

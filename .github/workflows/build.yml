@@ -19,6 +19,19 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Install pinned shared plugins
+        uses: TF-Minecraft/TLibs/.github/actions/setup-plugins@8ef41de589f121c98ff892b10696e7c1feb4ca74
+        with:
+          mode: pinned
+          token: ${{ github.token }}
+
+      - name: Install older API compatibility fixture
+        uses: TF-Minecraft/TLibs/.github/actions/setup-plugins@8ef41de589f121c98ff892b10696e7c1feb4ca74
+        with:
+          mode: pinned
+          pom: .github/compatibility/tlibs-2.3.xml
+          lock: .build/legacy-plugin-dependencies.json
+
       - name: Set build version
         id: dev
         shell: bash

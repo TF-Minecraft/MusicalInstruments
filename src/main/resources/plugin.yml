@@ -3,7 +3,7 @@ version: ${project.version}
 name: MusicalInstruments
 author: Justin
 api-version: '1.21.10'
-softdepend: [MMOItems, ItemsAdder, Nexo]
+softdepend: [TLibs, RPCharacters, MMOItems, ItemsAdder, Nexo]
 
 commands:
   instruments:

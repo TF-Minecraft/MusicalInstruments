@@ -149,11 +149,12 @@ public final class StudioDialogs {
 
     private DialogAction action(Player owner, Location station, AtomicBoolean used, Response response, Reopen destination) {
         UUID ownerId = owner.getUniqueId();
+        StudioIdentity.Token token = studio.token(owner);
         return DialogAction.customClick((view, audience) -> {
             if (!(audience instanceof Player target) || !target.getUniqueId().equals(ownerId)
                     || !used.compareAndSet(false, true) || !plugin.isEnabled()) return;
             plugin.getServer().getScheduler().runTask(plugin, () -> {
-                if (!target.isOnline()) return;
+                if (!target.isOnline() || !studio.current(token, target)) return;
                 try {
                     Block block = studio.station().require(target, station);
                     response.apply(target, view);

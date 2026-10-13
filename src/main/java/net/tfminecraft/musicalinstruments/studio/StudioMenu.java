@@ -53,7 +53,7 @@ public final class StudioMenu implements Listener {
     private void open(Player player, Block station, Screen screen, int page) throws IOException {
         studio.station().require(player, station);
         UUID projectId = screen == Screen.LIBRARY ? null : studio.requireProject(player).song().id();
-        Holder holder = new Holder(player.getUniqueId(), station == null ? null : station.getLocation(), screen, page, projectId);
+        Holder holder = new Holder(studio.token(player), station == null ? null : station.getLocation(), screen, page, projectId);
         holder.inventory = plugin.getServer().createInventory(holder, screen == Screen.SETTINGS ? 27 : 54,
                 Component.text(screen == Screen.LIBRARY ? "\u266b Your song projects" : screen == Screen.SETTINGS
                         ? "\u266b Song settings" : "\u266b Recording Studio", NamedTextColor.DARK_GRAY));
@@ -189,7 +189,7 @@ public final class StudioMenu implements Listener {
         if (event.getRawSlot() >= holder.inventory.getSize()
                 && (event.getClick() == ClickType.LEFT || event.getClick() == ClickType.RIGHT)) return;
         event.setCancelled(true);
-        if (!(event.getWhoClicked() instanceof Player player) || !holder.owner.equals(player.getUniqueId())
+        if (!(event.getWhoClicked() instanceof Player player) || !studio.current(holder.token, player)
                 || event.getRawSlot() < 0 || event.getRawSlot() >= holder.inventory.getSize()
                 || !(event.getClick() == ClickType.LEFT || event.getClick() == ClickType.RIGHT
                 || event.getClick() == ClickType.SHIFT_LEFT || event.getClick() == ClickType.SHIFT_RIGHT)) return;
@@ -200,7 +200,7 @@ public final class StudioMenu implements Listener {
             return;
         }
         plugin.getServer().getScheduler().runTask(plugin, () -> {
-            if (!player.isOnline() || player.getOpenInventory().getTopInventory() != holder.inventory) return;
+            if (!player.isOnline() || !studio.current(holder.token, player) || player.getOpenInventory().getTopInventory() != holder.inventory) return;
             try {
                 Block station = studio.station().require(player, holder.station);
                 if (raw == 8 && holder.screen != Screen.LIBRARY) { player.closeInventory(); return; }
@@ -269,7 +269,7 @@ public final class StudioMenu implements Listener {
         }
         ItemStack original = cursor.clone();
         plugin.getServer().getScheduler().runTask(plugin, () -> {
-            if (!player.isOnline() || player.getOpenInventory().getTopInventory() != holder.inventory
+            if (!player.isOnline() || !studio.current(holder.token, player) || player.getOpenInventory().getTopInventory() != holder.inventory
                     || !original.equals(player.getItemOnCursor())) return;
             try {
                 studio.station().require(player, holder.station);
@@ -298,7 +298,7 @@ public final class StudioMenu implements Listener {
         for (Player player : plugin.getServer().getOnlinePlayers()) {
             if (!(open(player) instanceof Holder holder)) continue;
             try {
-                if (!holder.owner.equals(player.getUniqueId())) { player.closeInventory(); continue; }
+                if (!studio.current(holder.token, player)) { player.closeInventory(); continue; }
                 studio.station().require(player, holder.station);
                 if (holder.screen == Screen.LIBRARY) continue;
                 Project project = studio.requireProject(player);
@@ -315,9 +315,13 @@ public final class StudioMenu implements Listener {
         if (event.getRawSlots().stream().noneMatch(slot -> slot < holder.inventory.getSize())) return;
         event.setCancelled(true);
         if (holder.screen == Screen.EDITOR && event.getRawSlots().equals(java.util.Set.of(50))
-                && event.getWhoClicked() instanceof Player player && holder.owner.equals(player.getUniqueId())) {
+                && event.getWhoClicked() instanceof Player player && studio.current(holder.token, player)) {
             deposit(player, holder, event.getOldCursor());
         }
+    }
+
+    public void end(Player player) {
+        if (open(player) instanceof Holder) player.closeInventory();
     }
 
     public void close() {
@@ -333,7 +337,7 @@ public final class StudioMenu implements Listener {
     }
 
     private static final class Holder implements InventoryHolder {
-        private final UUID owner;
+        private final StudioIdentity.Token token;
         private final Location station;
         private final Screen screen;
         private final UUID projectId;
@@ -346,8 +350,8 @@ public final class StudioMenu implements Listener {
         private ItemStack overwriteDisc;
         private Project overwriteProject;
         private long overwriteDeadline;
-        private Holder(UUID owner, Location station, Screen screen, int page, UUID projectId) {
-            this.owner = owner; this.station = station; this.screen = screen; this.page = page; this.projectId = projectId;
+        private Holder(StudioIdentity.Token token, Location station, Screen screen, int page, UUID projectId) {
+            this.token = token; this.station = station; this.screen = screen; this.page = page; this.projectId = projectId;
         }
         @Override public Inventory getInventory() { return inventory; }
     }

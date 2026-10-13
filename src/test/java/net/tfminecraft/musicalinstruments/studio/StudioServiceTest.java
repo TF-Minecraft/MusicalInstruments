@@ -59,7 +59,7 @@ class StudioServiceTest {
                 if (!release.await(5, TimeUnit.SECONDS)) throw new IOException("Checkpoint timed out");
             }
             return invocation.callRealMethod();
-        }).when(store).save(any());
+        }).when(store).saveOwned(any(), any());
         studio.record(player, 1);
         tick.run();
         tick.run();
@@ -89,12 +89,13 @@ class StudioServiceTest {
                 if (!release.await(3, TimeUnit.SECONDS)) throw new IOException("Save timed out");
             }
             return invocation.callRealMethod();
-        }).when(store).save(any());
+        }).when(store).saveOwned(any(), any());
         studio.record(player, 1);
         tick.run(); tick.run();
         studio.capture(player, "lute", "final", 1, 1);
         studio.stop(player);
         assertTrue(started.await(3, TimeUnit.SECONDS));
+        assertFalse(studio.quiescent(owner)); // An in-flight final take must drain before inheritance.
         Project kept = studio.requireProject(player).accept();
         try {
             studio.edit(player, kept); // Does not wait for the take to be written.
@@ -155,14 +156,14 @@ class StudioServiceTest {
         studio.record(player, 1);
         tick.run(); tick.run();
         studio.capture(player, "lute", "retained", 1, 1);
-        doThrow(new IOException("Disk full")).when(store).save(any());
+        doThrow(new IOException("Disk full")).when(store).saveOwned(any(), any());
         studio.quit(player);
         when(server.getPlayer(owner)).thenReturn(null);
         awaitSaves();
         when(server.getPlayer(owner)).thenReturn(player);
         Project retained = studio.requireProject(player);
         assertEquals("retained", retained.pending().notes().getFirst().sound());
-        doCallRealMethod().when(store).save(any());
+        doCallRealMethod().when(store).saveOwned(any(), any());
         studio.edit(player, retained.accept());
         awaitSaves();
         assertEquals("retained", new StudioStore(directory).project(owner).orElseThrow()
@@ -185,10 +186,10 @@ class StudioServiceTest {
         studio.create(player, "Song", false);
         studio.record(player, 1); tick.run(); tick.run();
         studio.capture(player, "lute", "recovered", 1, 1);
-        doThrow(new IOException("Temporary disk failure")).when(store).save(any());
+        doThrow(new IOException("Temporary disk failure")).when(store).saveOwned(any(), any());
         studio.stop(player);
         awaitSaveFutures(); // The failure has not yet been observed by the musical clock.
-        doCallRealMethod().when(store).save(any());
+        doCallRealMethod().when(store).saveOwned(any(), any());
         studio.close();
         assertEquals("recovered", new StudioStore(directory).project(owner).orElseThrow()
                 .pending().notes().getFirst().sound());
@@ -201,7 +202,7 @@ class StudioServiceTest {
         clearInvocations(store);
         studio.quit(player);
         studio.close();
-        verify(store, never()).save(any());
+        verify(store, never()).saveOwned(any(), any());
         verify(player, never()).sendMessage(startsWith("Take saved"));
     }
 
@@ -209,7 +210,7 @@ class StudioServiceTest {
     void disconnectEvictsACurrentProjectSoTheNextVisitReadsItsFiles() throws Exception {
         studio.save(player, new Project(song(track(1, "before")), null, 100, false));
         studio.quit(player);
-        new StudioStore(directory).save(new Project(song(track(1, "after")), null, 100, false));
+        new StudioStore(directory).saveOwned(new StudioIdentity.Owner(owner, owner), new Project(song(track(1, "after")), null, 100, false));
         assertEquals("after", studio.requireProject(player).song().track(1).notes().getFirst().sound());
     }
 
@@ -218,10 +219,10 @@ class StudioServiceTest {
         studio.create(player, "Song", false);
         studio.record(player, 1); tick.run(); tick.run();
         studio.capture(player, "lute", "retry", 1, 1);
-        doThrow(new IOException("Temporary disk failure")).when(store).save(any());
+        doThrow(new IOException("Temporary disk failure")).when(store).saveOwned(any(), any());
         studio.stop(player);
         awaitSaves();
-        doCallRealMethod().when(store).save(any());
+        doCallRealMethod().when(store).saveOwned(any(), any());
         studio.quit(player);
         when(server.getPlayer(owner)).thenReturn(null);
         awaitSaves();
@@ -234,13 +235,13 @@ class StudioServiceTest {
         Project project = new Project(song(track(1, "note")), null, 100, false);
         studio.save(player, project);
         Project renamed = new Project(new Song(project.song().id(), owner, "Musician", "Renamed", project.song().tracks()), null, 100, false);
-        doThrow(new IOException("Disk full")).when(store).save(any());
+        doThrow(new IOException("Disk full")).when(store).saveOwned(any(), any());
         studio.edit(player, renamed);
         awaitSaves();
         verify(player).sendMessage(startsWith("Could not save your project"));
         assertEquals(renamed, studio.requireProject(player));
         assertEquals(project, new StudioStore(directory).project(owner).orElseThrow());
-        doCallRealMethod().when(store).save(any());
+        doCallRealMethod().when(store).saveOwned(any(), any());
         clock(StudioService.RETRY_TICKS - 2);
         tick.run();
         assertFalse(awaitSaveFutures()); // Not retried before the minute.
@@ -250,7 +251,7 @@ class StudioServiceTest {
         clearInvocations(store);
         clock(2 * StudioService.RETRY_TICKS - 1);
         tick.run();
-        verify(store, never()).save(any()); // Nothing left to retry.
+        verify(store, never()).saveOwned(any(), any()); // Nothing left to retry.
     }
 
     @Test
@@ -261,18 +262,18 @@ class StudioServiceTest {
         studio.save(player, second);
         clearInvocations(store);
         studio.selectProject(player, first.song().id());
-        verify(store, never()).save(any());
+        verify(store, never()).saveOwned(any(), any());
         assertEquals(first, new StudioStore(directory).project(owner).orElseThrow());
         Project renamed = new Project(new Song(first.song().id(), owner, "Musician", "Renamed", first.song().tracks()), null, 100, false);
-        doThrow(new IOException("Disk full")).when(store).save(any());
+        doThrow(new IOException("Disk full")).when(store).saveOwned(any(), any());
         studio.edit(player, renamed);
         awaitSaves();
-        doCallRealMethod().when(store).save(any());
+        doCallRealMethod().when(store).saveOwned(any(), any());
         studio.selectProject(player, second.song().id());
         assertEquals(renamed, new StudioStore(directory).project(owner, first.song().id()));
         assertEquals(second, new StudioStore(directory).project(owner).orElseThrow());
         doReturn(second).when(store).project(owner, first.song().id()); // The file disappears after it was read.
-        java.nio.file.Files.delete(directory.resolve("projects").resolve(owner.toString()).resolve(first.song().id() + ".yml"));
+        java.nio.file.Files.delete(directory.resolve("character-projects").resolve(owner.toString()).resolve(first.song().id() + ".yml"));
         assertThrows(IllegalArgumentException.class, () -> studio.selectProject(player, first.song().id()));
     }
 
@@ -286,7 +287,7 @@ class StudioServiceTest {
         if (interrupted) doThrow(new InterruptedException("Shutdown interrupted")).when(worker).awaitTermination(StudioService.SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS);
         else doReturn(false).when(worker).awaitTermination(StudioService.SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS);
         studio = new StudioService(plugin, manager, store, new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2, 0, 0),
-                StudioStation.none(), discs, worker);
+                StudioStation.none(), discs, worker, TestIdentity.INSTANCE);
         var callbacks = ArgumentCaptor.forClass(Runnable.class);
         verify(server.getScheduler(), times(2)).runTaskTimer(eq(plugin), callbacks.capture(), eq(1L), eq(1L));
         tick = callbacks.getAllValues().getLast();
@@ -299,7 +300,7 @@ class StudioServiceTest {
                 if (!release.await(3, TimeUnit.SECONDS)) throw new IOException("Save timed out");
             }
             return invocation.callRealMethod();
-        }).when(store).save(any());
+        }).when(store).saveOwned(any(), any());
         studio.record(player, 1); tick.run(); tick.run();
         studio.capture(player, "lute", "final", 1, 1);
         studio.stop(player);
@@ -364,7 +365,7 @@ class StudioServiceTest {
         when(world.getPlayers()).thenReturn(List.of(player));
         when(scheduler.runTaskTimer(eq(plugin), any(Runnable.class), eq(1L), eq(1L))).thenReturn(task);
         studio = new StudioService(plugin, manager, store, new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2, 0, 0),
-                StudioStation.none(), discs);
+                StudioStation.none(), discs, TestIdentity.INSTANCE);
         var callback = ArgumentCaptor.forClass(Runnable.class);
         verify(scheduler).runTaskTimer(eq(plugin), callback.capture(), eq(1L), eq(1L));
         tick = callback.getValue();
@@ -481,7 +482,7 @@ class StudioServiceTest {
             Object result = invocation.callRealMethod();
             checkpointed.countDown();
             return result;
-        }).when(store).save(any());
+        }).when(store).saveOwned(any(), any());
         studio.record(player, 1);
         tick.run();
         tick.run();
@@ -521,7 +522,7 @@ class StudioServiceTest {
                 }
             }
             return invocation.callRealMethod();
-        }).when(store).save(any());
+        }).when(store).saveOwned(any(), any());
         studio.record(player, 1);
         tick.run();
         tick.run();
@@ -799,7 +800,7 @@ class StudioServiceTest {
         assertEquals(36, studio.listProjects(player).size());
         // Without an active project, a reset would add a 37th project.
         studio.quit(player);
-        java.nio.file.Files.writeString(directory.resolve("projects").resolve(owner.toString()).resolve(StudioStore.SELECTED), "garbage");
+        java.nio.file.Files.writeString(directory.resolve("character-projects").resolve(owner.toString()).resolve(StudioStore.SELECTED), "garbage");
         assertNull(studio.project(player));
         assertThrows(IllegalArgumentException.class, () -> studio.create(player, "Untitled", true));
         assertEquals(36, studio.listProjects(player).size());
@@ -860,12 +861,12 @@ class StudioServiceTest {
     @Test
     void deletionRejectsEditsToAnInactiveProjectAndLoadsOnlyThatProject() throws Exception {
         Project original = new Project(song(track(1, "original")), null, 100, false);
-        store.save(original);
+        store.saveOwned(new StudioIdentity.Owner(owner, owner), original);
         Project active = new Project(song(track(1, "other_song")), null, 100, false);
         studio.save(player, active);
         Project confirmation = studio.project(player, original.song().id());
         Project changed = new Project(original.song().replace(track(1, "replacement")), null, 100, false);
-        store.save(changed);
+        store.saveOwned(new StudioIdentity.Owner(owner, owner), changed);
         store.select(owner, active.song().id());
         assertEquals(ProjectSummary.of(original), ProjectSummary.of(changed));
         assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, confirmation));
@@ -910,14 +911,15 @@ class StudioServiceTest {
         studio.save(player, original);
         Project confirmation = studio.project(player, original.song().id());
         Project changed = new Project(original.song().replace(track(1, "replacement")), null, 100, false);
-        doThrow(new IOException("Write failed")).when(store).save(changed);
+        doThrow(new IOException("Write failed")).when(store).saveOwned(any(), eq(changed));
         studio.edit(player, changed); awaitSaves();
         assertEquals(original, store.project(owner, original.song().id()));
+        assertFalse(studio.quiescent(owner)); // A completed failed write still holds the unsaved property.
         assertEquals(changed, studio.project(player, original.song().id()));
         assertThrows(IllegalArgumentException.class, () -> studio.deleteProject(player, confirmation));
         assertEquals(original, store.project(owner, original.song().id()));
         assertEquals(changed, studio.requireProject(player));
-        doCallRealMethod().when(store).save(changed);
+        doCallRealMethod().when(store).saveOwned(any(), eq(changed));
     }
 
     @Test
@@ -948,6 +950,7 @@ class StudioServiceTest {
         when(original.getAmount()).thenReturn(1);
         assertThrows(IllegalArgumentException.class, () -> studio.publishOnDisc(player, original));
         studio.edit(player, project.discard());
+        awaitSaves();
         doThrow(new IOException("disk full")).when(store).publish(any());
         assertThrows(IOException.class, () -> studio.publishOnDisc(player, original));
         verify(discs, never()).disc(any(Song.class), any(ItemStack.class));
@@ -1119,7 +1122,7 @@ class StudioServiceTest {
                 throw new IOException("Checkpoint disk full");
             }
             return invocation.callRealMethod();
-        }).when(store).save(any());
+        }).when(store).saveOwned(any(), any());
         studio.record(player, 1);
         tick.run(); tick.run();
         studio.capture(player, "lute", "saved", 1, 1);
@@ -1133,7 +1136,7 @@ class StudioServiceTest {
         checkpointField.setAccessible(true);
         assertThrows(java.util.concurrent.CompletionException.class,
                 () -> ((CompletableFuture<?>) checkpointField.get(capture)).join());
-        doThrow(new IOException("Final disk full")).when(store).save(any());
+        doThrow(new IOException("Final disk full")).when(store).saveOwned(any(), any());
         tick.run(); tick.run();
         assertFalse(studio.activity(player).recording());
         assertEquals("saved", studio.requireProject(player).pending().notes().getFirst().sound());
@@ -1141,7 +1144,7 @@ class StudioServiceTest {
         assertNotNull(studio.requireProject(player).pending());
         studio.close();
         verify(player, atLeastOnce()).sendMessage(startsWith("Could not save your project"));
-        doCallRealMethod().when(store).save(any());
+        doCallRealMethod().when(store).saveOwned(any(), any());
     }
 
     @Test
@@ -1215,7 +1218,7 @@ class StudioServiceTest {
     void newSessionsCanSelectStoredProjectsAndDeleteAnUnselectedProject() throws Exception {
         Project first = new Project(song(), null, 100, false);
         Project second = new Project(song(), null, 100, false);
-        store.save(first); store.save(second);
+        store.saveOwned(new StudioIdentity.Owner(owner, owner), first); store.saveOwned(new StudioIdentity.Owner(owner, owner), second);
         assertEquals(first, studio.project(player, first.song().id()));
         studio.deleteProject(player, first);
         assertEquals(second, studio.requireProject(player));
@@ -1267,7 +1270,7 @@ class StudioServiceTest {
 
     private void configure(StudioSettings settings) {
         studio.close();
-        studio = new StudioService(plugin, manager, store, settings, StudioStation.none(), discs);
+        studio = new StudioService(plugin, manager, store, settings, StudioStation.none(), discs, TestIdentity.INSTANCE);
         var callbacks = ArgumentCaptor.forClass(Runnable.class);
         verify(plugin.getServer().getScheduler(), times(2)).runTaskTimer(eq(plugin), callbacks.capture(), eq(1L), eq(1L));
         tick = callbacks.getAllValues().getLast();
@@ -1329,7 +1332,7 @@ class StudioServiceTest {
     @Test
     void archivedProjectCanBeDeletedWhenTheSelectedFileIsMissing() throws Exception {
         Project project = new Project(song(), null, 100, false);
-        store.save(project);
+        store.saveOwned(new StudioIdentity.Owner(owner, owner), project);
         doReturn(java.util.Optional.empty()).when(store).project(owner);
         assertEquals(project, studio.project(player, project.song().id()));
         assertThrows(IllegalArgumentException.class, () -> studio.project(player, UUID.randomUUID()));
@@ -1341,7 +1344,7 @@ class StudioServiceTest {
     void anEmptyCaptureDoesNotQueueCheckpointsAndInvalidDiscsCannotPublish() throws Exception {
         studio.create(player, "Empty", false); studio.record(player, 1);
         for (int index = 0; index < 6; index++) tick.run();
-        verify(store, times(1)).save(any());
+        verify(store, times(1)).saveOwned(any(), any());
         studio.stop(player); awaitSaves();
         assertThrows(IllegalArgumentException.class, () -> studio.publishOnDisc(player, mock(ItemStack.class)));
     }
@@ -1358,4 +1361,91 @@ class StudioServiceTest {
         tick.run();
         verify(player, never()).playSound(any(Location.class), eq("note"), any(SoundCategory.class), anyFloat(), anyFloat());
     }
+    @Test void outgoingCleanupRetriesFailedEditsEvenWithoutACurrentSession() throws Exception {
+        studio.save(player, new Project(song(track(1, "original")), null, 100, false));
+        Project changed = new Project(studio.requireProject(player).song(), null, 125, true);
+        doThrow(new IOException("temporary disk failure")).when(store).saveOwned(any(), any());
+        studio.edit(player, changed); awaitSaves();
+        assertFalse(studio.quiescent(owner));
+        doCallRealMethod().when(store).saveOwned(any(), any());
+        TestIdentity.INSTANCE.sessions.put(owner, null);
+        try {
+            studio.quit(player); // Join/quit without a current identity never selects an account fallback.
+            studio.end(player, new StudioIdentity.Token(new StudioIdentity.Owner(owner, owner), 1));
+            awaitSaves();
+            assertEquals(125, store.project(owner).orElseThrow().bpm());
+            studio.end(player, new StudioIdentity.Token(new StudioIdentity.Owner(owner, owner), 1));
+            assertThrows(IllegalArgumentException.class, () -> studio.listProjects(player));
+        } finally { TestIdentity.INSTANCE.sessions.remove(owner); }
+    }
+
+    @Test void staleCaptureAndPreviewCannotFollowAnotherCharacterOnTheSameAccount() throws Exception {
+        studio.save(player, new Project(song(track(1, "original")), null, 100, false));
+        studio.record(player, 1); tick.run(); tick.run(); studio.capture(player, "lute", "outgoing", 1, 1);
+        assertFalse(studio.quiescent(owner)); assertTrue(studio.quiescent(UUID.randomUUID()));
+        TestIdentity.INSTANCE.sessions.put(owner, new StudioIdentity.Token(new StudioIdentity.Owner(owner, UUID.randomUUID()), 2));
+        try {
+            studio.capture(player, "lute", "incoming_must_be_ignored", 1, 1);
+            tick.run(); awaitSaves();
+            assertEquals(List.of("outgoing"), store.project(owner).orElseThrow().pending().notes().stream().map(Note::sound).toList());
+        } finally { TestIdentity.INSTANCE.sessions.remove(owner); }
+        studio.edit(player, studio.requireProject(player).discard()); awaitSaves();
+        studio.preview(player, false); tick.run();
+        TestIdentity.INSTANCE.sessions.put(owner, new StudioIdentity.Token(new StudioIdentity.Owner(owner, UUID.randomUUID()), 3));
+        try { tick.run(); assertFalse(studio.activity(player).previewing()); }
+        finally { TestIdentity.INSTANCE.sessions.remove(owner); }
+    }
+
+    @Test void aFailedEditIsNotRewrittenOverAnActiveCaptureAtTheRetryTick() throws Exception {
+        studio.save(player, new Project(song(track(1, "original")), null, 100, false));
+        doThrow(new IOException("disk failure")).when(store).saveOwned(any(), any());
+        studio.edit(player, new Project(studio.requireProject(player).song(), null, 125, false)); awaitSaves();
+        clock(StudioService.RETRY_TICKS - 1); studio.record(player, 1); clearInvocations(store);
+        tick.run(); verify(store, never()).saveOwned(any(), any());
+        studio.end(player, new StudioIdentity.Token(new StudioIdentity.Owner(owner, UUID.randomUUID()), 99));
+        doCallRealMethod().when(store).saveOwned(any(), any()); studio.stop(player); awaitSaves();
+    }
+
+    @Test void unknownDiskAuthorityAndCorruptOwnershipJournalsFailClosed() throws Exception {
+        doThrow(new IOException("owner file inaccessible")).when(store).requireAuthority(any(), any(), any());
+        assertThrows(IllegalArgumentException.class, () -> studio.create(player, "Unavailable", false));
+        doCallRealMethod().when(store).requireAuthority(any(), any(), any());
+        var folder = directory.resolve("ownership/estates"); java.nio.file.Files.createDirectories(folder);
+        var corrupt = folder.resolve("broken.xml"); java.nio.file.Files.writeString(corrupt, "broken XML");
+        assertThrows(IllegalArgumentException.class, () -> studio.token(player));
+        java.nio.file.Files.delete(corrupt);
+        studio.create(player, "Recovered", false);
+    }
+
+    @Test void runtimeMigrationReportsDurableWriteFailuresWithoutChangingTheLegacySource() throws Exception {
+        Project project = new Project(song(track(1, "original")), null, 100, false); studio.save(player, project);
+        var source = directory.resolve("projects").resolve(owner.toString()).resolve(project.song().id() + ".yml");
+        java.nio.file.Files.createDirectories(source.getParent());
+        java.nio.file.Files.copy(store.projectFile(owner, project.song().id()), source);
+        java.nio.file.Files.createDirectories(directory.resolve("ownership"));
+        var blocked = directory.resolve("ownership/migration"); java.nio.file.Files.writeString(blocked, "block directory creation");
+        studio.startOwnership(mock(StudioMenu.class));
+        var callback = ArgumentCaptor.forClass(Runnable.class);
+        verify(server.getScheduler()).runTaskTimer(eq(plugin), callback.capture(), eq(1L), eq(72_000L));
+        assertDoesNotThrow(() -> callback.getValue().run());
+        assertTrue(java.nio.file.Files.exists(source));
+        java.nio.file.Files.delete(blocked);
+    }
+
+    @Test void staleProviderTokensAreRejectedBeforePropertyOperations() throws Exception {
+        var identity = mock(StudioIdentity.class);
+        var token = new StudioIdentity.Token(new StudioIdentity.Owner(owner, owner), 1);
+        when(identity.current(player)).thenReturn(java.util.Optional.of(token));
+        var worker = java.util.concurrent.Executors.newSingleThreadExecutor();
+        var closedStudio = new StudioService(plugin, manager, store, new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2, 0, 0), StudioStation.none(), discs, worker, identity);
+        try {
+            assertThrows(IllegalArgumentException.class, () -> closedStudio.token(player));
+            when(identity.current(token)).thenReturn(true);
+            assertEquals(token, closedStudio.token(player));
+        }
+        finally { closedStudio.close(); }
+        var optionalStudio = new StudioService(plugin, manager, store, new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 2, 0, 0), StudioStation.none(), discs, java.util.concurrent.Executors.newSingleThreadExecutor());
+        optionalStudio.close();
+    }
+
 }

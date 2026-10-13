@@ -78,6 +78,9 @@ class StudioMenuTest {
 
     @BeforeEach
     void setup() throws Exception {
+        when(studio.token(any())).thenAnswer(call -> TestIdentity.INSTANCE.current(call.getArgument(0, Player.class)).orElseThrow());
+        when(studio.current(any(), any())).thenAnswer(call -> TestIdentity.INSTANCE.current(call.getArgument(0, StudioIdentity.Token.class))
+                && call.getArgument(0, StudioIdentity.Token.class).owner().account().equals(call.getArgument(1, Player.class).getUniqueId()));
         Server server = mock(Server.class);
         when(plugin.getServer()).thenReturn(server);
         when(server.getScheduler()).thenReturn(scheduler);
@@ -624,6 +627,24 @@ class StudioMenuTest {
         Project other = new Project(new Song(UUID.randomUUID(), player.getUniqueId(), "Player", "Other", List.of()), null, 100, false);
         when(studio.requireProject(player)).thenReturn(project, other);
         assertThrows(IllegalArgumentException.class, () -> menu.openProject(player, station));
+    }
+
+    @Test void sessionEndClosesOnlyStudioMenusAndDeferredClicksRecheckTheCapturedSession() throws Exception {
+        click(11, ClickType.LEFT);
+        when(studio.current(any(), eq(player))).thenReturn(false);
+        executeClick(); verify(studio, never()).edit(eq(player), any());
+        menu.end(player); verify(player).closeInventory();
+        when(view.getTopInventory()).thenReturn(mock(Inventory.class));
+        menu.end(player); verify(player, times(1)).closeInventory();
+    }
+
+    @Test void deferredDiscPublicationDoesNotConsumeTheCursorAfterItsSessionChanges() throws Exception {
+        var event = mock(InventoryClickEvent.class); var disc = prepareCursorDisc();
+        when(event.getView()).thenReturn(view); when(event.getWhoClicked()).thenReturn(player);
+        when(event.getRawSlot()).thenReturn(50); when(event.getClick()).thenReturn(ClickType.LEFT); when(event.getCursor()).thenReturn(disc);
+        menu.click(event);
+        when(studio.current(any(), eq(player))).thenReturn(false);
+        executeClick(); verify(studio, never()).publishOnDisc(any(), any());
     }
 
 }

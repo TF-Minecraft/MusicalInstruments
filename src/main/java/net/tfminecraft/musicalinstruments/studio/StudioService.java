@@ -43,6 +43,9 @@ public final class StudioService {
     private final InstrumentPlugin plugin;
     private final InstrumentManager manager;
     private final StudioStore store;
+    private final StudioIdentity identity;
+    private final StudioOwnership ownership;
+    private final Map<UUID, StudioIdentity.Owner> owners = new HashMap<>();
     private final StudioSettings settings;
     private final StudioStation station;
     private final DiscItems discs;
@@ -71,6 +74,7 @@ public final class StudioService {
     private final ExecutorService checkpointWriter;
     private long clock;
     private boolean closed;
+    private boolean migrationAttempted;
     private volatile long shutdownDeadline;
 
     public StudioService(InstrumentPlugin plugin, InstrumentManager manager) throws IOException {
@@ -97,17 +101,29 @@ public final class StudioService {
 
     StudioService(InstrumentPlugin plugin, InstrumentManager manager, StudioStore store, StudioSettings settings,
                   StudioStation station, DiscItems discs) {
+        this(plugin, manager, store, settings, station, discs, StudioIdentity.load());
+    }
+
+    StudioService(InstrumentPlugin plugin, InstrumentManager manager, StudioStore store, StudioSettings settings,
+                  StudioStation station, DiscItems discs, StudioIdentity identity) {
         this(plugin, manager, store, settings, station, discs, Executors.newSingleThreadExecutor(
-                Thread.ofPlatform().daemon(true).name("musical-instruments-checkpoints").factory()));
+                Thread.ofPlatform().daemon(true).name("musical-instruments-checkpoints").factory()), identity);
     }
 
     StudioService(InstrumentPlugin plugin, InstrumentManager manager, StudioStore store, StudioSettings settings,
                   StudioStation station, DiscItems discs, ExecutorService checkpointWriter) {
+        this(plugin, manager, store, settings, station, discs, checkpointWriter, StudioIdentity.load());
+    }
+
+    StudioService(InstrumentPlugin plugin, InstrumentManager manager, StudioStore store, StudioSettings settings,
+                  StudioStation station, DiscItems discs, ExecutorService checkpointWriter, StudioIdentity identity) {
         this.plugin = plugin;
         this.manager = manager;
         this.settings = settings;
         this.station = station;
         this.store = store;
+        this.identity = identity;
+        this.ownership = new StudioOwnership(store);
         this.discs = discs;
         this.checkpointWriter = checkpointWriter;
         task = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tick, 1L, 1L);
@@ -116,6 +132,45 @@ public final class StudioService {
     public DiscItems discs() { return discs; }
     public StudioSettings settings() { return settings; }
     public StudioStation station() { return station; }
+
+    public StudioIdentity.Token token(Player player) {
+        StudioIdentity.Token token = identity.current(player).orElseThrow(
+                () -> new IllegalArgumentException("Choose an active character before using the recording studio"));
+        if (!current(token, player)) throw new IllegalArgumentException("Your character session changed");
+        owners.put(token.owner().character(), token.owner());
+        try {
+            if (!migrationAttempted && identity.heirsReady()) {
+                ownership.migrate(identity);
+                migrationAttempted = true;
+            }
+            ownership.requireWritable(token.owner().character());
+        }
+        catch (IOException ex) { throw new IllegalArgumentException("Studio ownership needs recovery: " + ex.getMessage(), ex); }
+        return token;
+    }
+
+    public boolean current(StudioIdentity.Token token, Player player) {
+        return token != null && token.owner().account().equals(player.getUniqueId()) && identity.current(token);
+    }
+
+    private UUID owner(Player player) { return token(player).owner().character(); }
+
+    public void startOwnership(StudioMenu menu) {
+        plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
+            try { ownership.migrate(identity); migrationAttempted = identity.heirsReady(); }
+            catch (IOException ex) { plugin.getLogger().warning("Studio migration held: " + ex.getMessage()); }
+        }, 1L, 72_000L);
+        if (identity instanceof CharacterStudioBridge) CharacterStudioBridge.start(plugin, this, menu);
+        StudioEstate.startIfAvailable(plugin, this, ownership);
+    }
+
+    boolean quiescent(UUID character) {
+        completeSaves();
+        return !pendingSaves.containsKey(character) && !unsaved.contains(character)
+                && recordings.values().stream().noneMatch(capture -> capture.token.owner().character().equals(character));
+    }
+
+    void transferred(UUID character) { projects.remove(character); owners.remove(character); }
 
     public record Activity(int track, int seconds, int notes, int countdown, boolean previewing) {
         public boolean recording() { return track > 0; }
@@ -132,11 +187,12 @@ public final class StudioService {
     }
 
     public Project project(Player player) throws IOException {
-        Project project = projects.get(player.getUniqueId());
+        Project project = projects.get(owner(player));
         if (project == null) {
-            project = store.project(player.getUniqueId()).orElse(null);
+            project = store.project(owner(player)).orElse(null);
             if (project != null) {
-                projects.put(player.getUniqueId(), project);
+                requireOwner(player, project);
+                projects.put(owner(player), project);
             }
         }
         return project;
@@ -170,9 +226,11 @@ public final class StudioService {
 
     /** Loads only the requested project; a cached version may contain changes not yet written. */
     public Project project(Player player, UUID id) throws IOException {
-        Project current = projects.get(player.getUniqueId());
+        Project current = projects.get(owner(player));
         if (current != null && current.song().id().equals(id)) return current;
-        return store.project(player.getUniqueId(), id);
+        Project loaded = store.project(owner(player), id);
+        requireOwner(player, loaded);
+        return loaded;
     }
 
     /** Deletes the project only if it still matches what the player confirmed. */
@@ -184,11 +242,11 @@ public final class StudioService {
         if (!project(player, id).equals(expected)) {
             throw new IllegalArgumentException("The project changed. Open the delete confirmation again");
         }
-        store.delete(player.getUniqueId(), id);
-        Project current = projects.get(player.getUniqueId());
+        store.delete(owner(player), id);
+        Project current = projects.get(owner(player));
         if (current != null && current.song().id().equals(id)) {
-            projects.remove(player.getUniqueId());
-            unsaved.remove(player.getUniqueId());
+            projects.remove(owner(player));
+            unsaved.remove(owner(player));
             stopPreview(player);
         }
         player.sendMessage("Deleted '" + expected.song().title() + "'. Published discs keep their music.");
@@ -196,9 +254,9 @@ public final class StudioService {
 
     public List<ProjectSummary> listProjects(Player player) throws IOException {
         Map<UUID, ProjectSummary> all = new LinkedHashMap<>();
-        for (ProjectSummary summary : store.summaries(player.getUniqueId())) all.put(summary.id(), summary);
+        for (ProjectSummary summary : store.summaries(owner(player))) all.put(summary.id(), summary);
         // An uncached project matches its files; a cached one may be newer than them.
-        Project active = projects.get(player.getUniqueId());
+        Project active = projects.get(owner(player));
         if (active != null) all.put(active.song().id(), ProjectSummary.of(active));
         return all.values().stream().sorted(ProjectSummary.ORDER).toList();
     }
@@ -207,10 +265,11 @@ public final class StudioService {
         Project current = project(player);
         if (current != null && current.song().id().equals(id)) return;
         requireSaved(player); // The next project is read from its file, which a queued write could still change.
-        Project next = store.project(player.getUniqueId(), id);
+        Project next = store.project(owner(player), id);
+        requireOwner(player, next);
         persist(player);
-        store.select(player.getUniqueId(), id); // Both projects already match their files.
-        projects.put(player.getUniqueId(), next);
+        store.select(owner(player), id); // Both projects already match their files.
+        projects.put(owner(player), next);
         stopPreview(player);
     }
 
@@ -218,9 +277,9 @@ public final class StudioService {
     public void save(Player player, Project project) throws IOException {
         requireOwner(player, project);
         requireSaved(player);
-        store.save(project); // Persist successfully before replacing the in-memory version.
-        projects.put(player.getUniqueId(), project);
-        unsaved.remove(player.getUniqueId());
+        store.saveOwned(token(player).owner(), project); // Persist successfully before replacing the in-memory version.
+        projects.put(owner(player), project);
+        unsaved.remove(owner(player));
     }
 
     /**
@@ -230,35 +289,35 @@ public final class StudioService {
     public void edit(Player player, Project project) {
         requireOwner(player, project);
         requireIdle(player);
-        projects.put(player.getUniqueId(), project);
-        unsaved.add(player.getUniqueId());
-        queueSave(project);
+        projects.put(owner(player), project);
+        unsaved.add(owner(player));
+        queueSave(token(player).owner(), project);
     }
 
-    private static void requireOwner(Player player, Project project) {
-        if (!project.song().owner().equals(player.getUniqueId())) {
-            throw new IllegalArgumentException("This is not your project");
-        }
+    private void requireOwner(Player player, Project project) {
+        StudioIdentity.Owner ref = token(player).owner();
+        try { store.requireAuthority(ref, project.song().id(), project.song().owner()); }
+        catch (IOException ex) { throw new IllegalArgumentException("Could not verify your project's owner", ex); }
     }
 
     // Retries a write that failed. A project with no failed write already matches its files.
     private void persist(Player player) throws IOException {
-        Project current = projects.get(player.getUniqueId());
-        if (unsaved.contains(player.getUniqueId())) save(player, current);
+        Project current = projects.get(owner(player));
+        if (unsaved.contains(owner(player))) save(player, current);
     }
 
     public void requireIdle(Player player) {
-        if (recordings.containsKey(player.getUniqueId())) {
+        if (recordings.containsKey(owner(player))) {
             throw new IllegalArgumentException("Stop the recording with /music stop first");
         }
-        CompletableFuture<Void> pending = pendingSaves.get(player.getUniqueId());
-        if (pending != null && pending.isDone()) completeSave(player.getUniqueId(), pending);
+        CompletableFuture<Void> pending = pendingSaves.get(owner(player));
+        if (pending != null && pending.isDone()) completeSave(owner(player), pending);
     }
 
     /** Also requires the project's files to be current, for changes that read or remove them. */
     public void requireSaved(Player player) {
         requireIdle(player);
-        if (pendingSaves.containsKey(player.getUniqueId())) {
+        if (pendingSaves.containsKey(owner(player))) {
             throw new IllegalArgumentException("Your project is still saving. Try again shortly");
         }
     }
@@ -279,14 +338,14 @@ public final class StudioService {
         }
         stopPreview(player);
         capacity();
-        recordings.put(player.getUniqueId(), new Capture(project, slot, clock + settings.countInTicks()));
+        recordings.put(player.getUniqueId(), new Capture(project, slot, clock + settings.countInTicks(), token(player)));
         player.sendMessage("Recording starts in " + settings.countInTicks() / 20 + " seconds. Play with the hotbar, "
                 + "or right-click your instrument for the keyboard. /music stop ends the take.");
     }
 
     public void capture(Player player, String instrument, String sound, float volume, float pitch) {
         Capture capture = recordings.get(player.getUniqueId());
-        if (capture == null || clock < capture.start || clock - capture.start >= settings.durationTicks()) {
+        if (capture == null || !current(capture.token, player) || clock < capture.start || clock - capture.start >= settings.durationTicks()) {
             return;
         }
         int at = (int) (clock - capture.start);
@@ -359,7 +418,7 @@ public final class StudioService {
     private void previewSong(Player player, Song song) {
         stopPreview(player);
         capacity();
-        previews.put(player.getUniqueId(), new Preview(song, clock + 1));
+        previews.put(player.getUniqueId(), new Preview(song, clock + 1, token(player)));
     }
 
     private void stopPreview(Player player) {
@@ -418,7 +477,7 @@ public final class StudioService {
             throw new IllegalArgumentException("Wait " + seconds + " seconds before publishing again");
         }
         // No item is consumed when publication fails.
-        Song edition = store.publishEdition(project.song(), settings.editionsPerDay());
+        Song edition = store.publishEdition(project.song(), player.getUniqueId(), settings.editionsPerDay());
         lastPublished.put(player.getUniqueId(), clock);
         editions.put(edition.id(), edition);
         return edition;
@@ -573,6 +632,7 @@ public final class StudioService {
                 continue; // PlayerQuitEvent persists the take while the player is still accessible.
             }
             Capture capture = entry.getValue();
+            if (!current(capture.token, player)) { finish(player, capture, "Recording stopped when the character changed"); continue; }
             long elapsed = clock - capture.start;
             if (elapsed < 0) {
                 if (-elapsed % 20 == 0) {
@@ -605,7 +665,7 @@ public final class StudioService {
                 if (capture.checkpoint.isCompletedExceptionally()) {
                     finish(player, capture, "Checkpoint failed; recording stopped to protect your take");
                 } else if (capture.checkpoint.isDone()) {
-                    capture.checkpoint = write(capture.snapshot((int) elapsed));
+                    capture.checkpoint = write(capture.token.owner(), capture.snapshot((int) elapsed));
                 }
             }
         }
@@ -614,7 +674,7 @@ public final class StudioService {
             Player player = plugin.getServer().getPlayer(entry.getKey());
             Preview preview = entry.getValue();
             int elapsed = (int) (clock - preview.start);
-            if (player == null || elapsed >= preview.song.lengthTicks() + settings.tailTicks()) {
+            if (player == null || !current(preview.token, player) || elapsed >= preview.song.lengthTicks() + settings.tailTicks()) {
                 it.remove();
                 if (player != null) stopPrivateSounds(player);
                 else privateSounds.remove(entry.getKey());
@@ -688,20 +748,21 @@ public final class StudioService {
         }
         Project result = capture.snapshot((int) Math.max(1, Math.min(settings.durationTicks(), clock - capture.start + 1)));
         // The take is kept in memory even if the disk fails; it can be reviewed while it is written.
-        projects.put(player.getUniqueId(), result);
-        unsaved.add(player.getUniqueId());
-        queueSave(result);
+        UUID character = capture.token.owner().character();
+        projects.put(character, result);
+        unsaved.add(character);
+        queueSave(capture.token.owner(), result);
         player.sendMessage(reason + ". Review the take: /music preview take, then /music keep or /music discard.");
     }
 
-    private void queueSave(Project project) {
-        pendingSaves.put(project.song().owner(), write(project));
+    private void queueSave(StudioIdentity.Owner ref, Project project) {
+        pendingSaves.put(ref.character(), write(ref, project));
     }
 
     // One queued snapshot per owner, plus the single snapshot currently being written. Changes
     // arriving during a write go to the tail, letting other owners save before this owner runs again.
-    private CompletableFuture<Void> write(Project project) {
-        UUID owner = project.song().owner();
+    private CompletableFuture<Void> write(StudioIdentity.Owner ref, Project project) {
+        UUID owner = ref.character();
         synchronized (queuedSaves) {
             QueuedSave queued = queuedSaves.get(owner);
             if (queued != null) {
@@ -716,7 +777,7 @@ public final class StudioService {
                     queuedSaves.remove(owner);
                     snapshot = next.project;
                 }
-                saveSnapshot(snapshot);
+                saveSnapshot(ref, snapshot);
             }, checkpointWriter).whenComplete((ignored, error) -> {
                 if (error == null) next.future.complete(null);
                 else next.future.completeExceptionally(error);
@@ -725,16 +786,16 @@ public final class StudioService {
         }
     }
 
-    private void saveSnapshot(Project project) {
+    private void saveSnapshot(StudioIdentity.Owner ref, Project project) {
         try {
             try {
-                store.save(project);
+                store.saveOwned(ref, project);
             } catch (IOException ex) {
                 // A failure can appear only after close has checked the pending saves. Retry it
                 // once on this same worker, even after shutdown(), while the close budget remains.
                 long deadline = shutdownDeadline;
                 if (deadline == 0 || System.nanoTime() - deadline >= 0) throw ex;
-                store.save(project);
+                store.saveOwned(ref, project);
             }
         } catch (IOException ex) {
             plugin.getLogger().log(Level.SEVERE, "Could not save studio project for " + project.song().owner(), ex);
@@ -744,7 +805,9 @@ public final class StudioService {
 
     private void completeSave(UUID owner, CompletableFuture<Void> pending) {
         pendingSaves.remove(owner);
-        Player player = plugin.getServer().getPlayer(owner);
+        StudioIdentity.Owner ref = owners.get(owner);
+        Player player = plugin.getServer().getPlayer(ref.account());
+        if (player != null && identity.current(player).map(token -> token.owner().character().equals(owner)).orElse(false) == false) player = null;
         if (pending.isCompletedExceptionally()) {
             // Retried by the next change, every minute, on disconnect and on shutdown.
             if (player != null) player.sendMessage("Could not save your project. Your changes are kept and will be saved again; "
@@ -767,7 +830,7 @@ public final class StudioService {
     // its checkpoints and final take include the cached project, which still lacks the take and would erase it.
     private void retryFailedSaves() {
         for (UUID owner : unsaved) {
-            if (!pendingSaves.containsKey(owner) && !recordings.containsKey(owner)) queueSave(projects.get(owner));
+            if (!pendingSaves.containsKey(owner) && recordings.values().stream().noneMatch(capture -> capture.token.owner().character().equals(owner))) queueSave(owners.get(owner), projects.get(owner));
         }
     }
 
@@ -777,10 +840,23 @@ public final class StudioService {
             finish(player, capture, "Recording stopped on disconnect");
         }
         stopPreview(player);
-        UUID owner = player.getUniqueId();
+        StudioIdentity.Token token = identity.current(player).orElse(null);
+        if (token == null) return;
+        UUID owner = token.owner().character();
         if (pendingSaves.containsKey(owner)) return; // completeSave evicts the project once it is written.
-        if (unsaved.contains(owner)) queueSave(projects.get(owner)); // Retry a write that failed.
+        if (unsaved.contains(owner)) queueSave(owners.get(owner), projects.get(owner)); // Retry a write that failed.
         else projects.remove(owner); // Its files are current; the next visit reloads it.
+    }
+
+    public void end(Player player, StudioIdentity.Token ending) {
+        Capture capture = recordings.get(player.getUniqueId());
+        if (capture != null && capture.token.equals(ending)) finish(player, capture, "Recording stopped when the character session ended");
+        stopPreview(player);
+        UUID character = ending.owner().character();
+        if (!pendingSaves.containsKey(character)) {
+            if (unsaved.contains(character)) queueSave(ending.owner(), projects.get(character));
+            else projects.remove(character);
+        }
     }
 
     public void close() {
@@ -839,13 +915,15 @@ public final class StudioService {
 
     private static final class Capture {
         private final Project project;
+        private final StudioIdentity.Token token;
         private final int slot;
         private final long start;
         private final Timeline backing;
         private final List<Note> notes = new ArrayList<>();
         private CompletableFuture<Void> checkpoint = CompletableFuture.completedFuture(null);
 
-        private Capture(Project project, int slot, long start) {
+        private Capture(Project project, int slot, long start, StudioIdentity.Token token) {
+            this.token = token;
             this.project = project;
             this.slot = slot;
             this.start = start;
@@ -865,7 +943,10 @@ public final class StudioService {
         private final long start;
         private final Timeline timeline;
 
-        private Preview(Song song, long start) {
+        private final StudioIdentity.Token token;
+
+        private Preview(Song song, long start, StudioIdentity.Token token) {
+            this.token = token;
             this.song = song;
             this.start = start;
             timeline = new Timeline(song, -1);

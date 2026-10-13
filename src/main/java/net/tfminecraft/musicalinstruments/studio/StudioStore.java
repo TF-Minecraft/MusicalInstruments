@@ -98,11 +98,11 @@ public final class StudioStore {
         return index(owner).values().stream().sorted(ProjectSummary.ORDER).toList();
     }
 
-    private Path directory(UUID owner) {
-        return root.resolve("projects").resolve(owner.toString());
+    Path directory(UUID owner) {
+        return root.resolve("character-projects").resolve(owner.toString());
     }
 
-    private Path projectFile(UUID owner, UUID id) {
+    Path projectFile(UUID owner, UUID id) {
         return directory(owner).resolve(id + ".yml");
     }
 
@@ -256,7 +256,8 @@ public final class StudioStore {
         YamlConfiguration yaml = read(file);
         try {
             Song song = decodeSong(yaml);
-            if (!song.owner().equals(owner)) {
+            String authority = yaml.getString("owner-character");
+            if (!(authority == null ? song.owner() : UUID.fromString(authority)).equals(owner)) {
                 throw new IllegalArgumentException("Project owner mismatch");
             }
             if (!song.id().equals(id)) throw new IllegalArgumentException("Project ID mismatch");
@@ -266,6 +267,22 @@ public final class StudioStore {
             throw new DamagedFileException("Invalid project " + owner, ex);
         }
     }
+
+    public void requireAuthority(StudioIdentity.Owner owner, UUID id, UUID authorAccount) throws IOException {
+        Path file = projectFile(owner.character(), id);
+        if (!Files.exists(file)) {
+            if (!authorAccount.equals(owner.account())) throw new IllegalArgumentException("This is not your project");
+            return;
+        }
+        YamlConfiguration yaml = read(file);
+        String account = yaml.getString("owner-account");
+        String character = yaml.getString("owner-character");
+        if (!owner.account().toString().equals(account) || !owner.character().toString().equals(character)) {
+            throw new IllegalArgumentException("This is not your character's project");
+        }
+    }
+
+    Path root() { return root; }
 
     public Song song(UUID id) throws IOException {
         YamlConfiguration yaml = read(root.resolve("songs").resolve(id + ".yml"));
@@ -281,22 +298,77 @@ public final class StudioStore {
     }
 
     public void save(Project project) throws IOException {
-        UUID owner = project.song().owner();
+        saveAt(project.song().owner(), null, project);
+    }
+
+    public void saveOwned(StudioIdentity.Owner owner, Project project) throws IOException {
+        requireAuthority(owner, project.song().id(), project.song().owner());
+        saveAt(owner.character(), owner, project);
+    }
+
+    private void saveAt(UUID owner, StudioIdentity.Owner authority, Project project) throws IOException {
         Path file = projectFile(owner, project.song().id());
         Files.createDirectories(file.getParent());
-        write(file, encodeProject(project), true);
+        if (Files.exists(file)) read(file);
+        Map<String, Object> yaml = Files.exists(file) ? RawYaml.read(Files.readAllBytes(file)) : new LinkedHashMap<>();
+        preserveProject(yaml, project);
+        if (authority != null) {
+            yaml.put("owner-account", authority.account().toString());
+            yaml.put("owner-character", authority.character().toString());
+        }
+        write(file, RawYaml.bytes(yaml), true);
         point(owner, project.song().id());
         remember(project, file);
     }
 
-    private YamlConfiguration encodeProject(Project project) {
-        YamlConfiguration yaml = encodeSong(project.song());
-        yaml.set("bpm", project.bpm());
-        yaml.set("metronome", project.metronome());
+    private void preserveProject(Map<String, Object> yaml, Project project) {
+        YamlConfiguration known = encodeSong(project.song());
+        Object oldTracks = yaml.get("tracks");
+        for (String key : known.getKeys(false)) yaml.put(key, known.get(key));
+        yaml.put("tracks", preserveTracks(yaml, oldTracks, project.song().tracks()));
+        yaml.put("bpm", project.bpm());
+        yaml.put("metronome", project.metronome());
         if (project.pending() != null) {
-            yaml.set("pending", encodeTrack(project.pending()));
+            Map<String, Object> pending = new LinkedHashMap<>();
+            if (yaml.containsKey("pending")) map(yaml.get("pending")).forEach((key, value) -> pending.put(key.toString(), value));
+            pending.putAll(encodeTrack(project.pending()));
+            yaml.put("pending", pending);
+        } else {
+            // Keep unknown extension fields when a pending take is removed.
+            Object old = yaml.get("pending");
+            if (old != null) {
+                Map<String, Object> extra = new LinkedHashMap<>();
+                map(old).forEach((key, value) -> { if (!TRACK_KEYS.contains(key.toString())) extra.put(key.toString(), value); });
+                if (!extra.isEmpty()) yaml.put("retained-pending", extra);
+            }
+            yaml.remove("pending");
         }
-        return yaml;
+    }
+
+    private static final java.util.Set<String> TRACK_KEYS = java.util.Set.of("slot", "length", "gain", "muted", "names", "notes");
+
+    private List<Map<String, Object>> preserveTracks(Map<String, Object> yaml, Object raw, List<Track> tracks) {
+        Map<Integer, Map<String, Object>> old = new LinkedHashMap<>();
+        if (raw instanceof List<?> values) for (Object value : values) {
+            Map<?, ?> row = map(value);
+            Map<String, Object> copy = new LinkedHashMap<>();
+            row.forEach((key, item) -> copy.put(key.toString(), item));
+            old.put(integer(row.get("slot")), copy);
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Track track : tracks) {
+            Map<String, Object> row = old.remove(track.slot());
+            if (row == null) row = new LinkedHashMap<>();
+            row.putAll(encodeTrack(track));
+            rows.add(row);
+        }
+        if (!old.isEmpty()) {
+            Map<String, Object> retained = new LinkedHashMap<>();
+            if (yaml.containsKey("retained-tracks")) map(yaml.get("retained-tracks")).forEach((key, value) -> retained.put(key.toString(), value));
+            old.forEach((slot, row) -> retained.put(slot.toString(), row));
+            yaml.put("retained-tracks", retained);
+        }
+        return rows;
     }
 
     public void publish(Song song) throws IOException {
@@ -308,6 +380,10 @@ public final class StudioStore {
      * republishing an unchanged mix returns the earlier edition instead of adding another file.
      */
     public Song publishEdition(Song song, int perDay) throws IOException {
+        return publishEdition(song, song.owner(), perDay);
+    }
+
+    public Song publishEdition(Song song, UUID publishingAccount, int perDay) throws IOException {
         // Muted and silent parts are never played, so they are not kept forever either.
         List<Track> tracks = song.audibleMix().tracks();
         String content = encodeSong(new Song(CONTENT_ID, song.owner(), song.author(), song.title(), tracks)).saveToString();
@@ -323,7 +399,7 @@ public final class StudioStore {
             return edition;
         }
         long now = clock.millis();
-        List<Long> recent = recentEditions(song.owner(), now);
+        List<Long> recent = recentEditions(publishingAccount, now);
         if (perDay > 0 && recent.size() >= perDay) {
             long minutes = (recent.getFirst() + DAY_MILLIS - now + 59_999) / 60_000;
             throw new IllegalArgumentException("You can publish " + perDay + " new song editions a day. Try again in "
@@ -331,7 +407,7 @@ public final class StudioStore {
         }
         publish(edition);
         recent.add(now);
-        Path log = editionLog(song.owner());
+        Path log = editionLog(publishingAccount);
         Files.createDirectories(log.getParent());
         write(log, String.join("\n", recent.stream().map(String::valueOf).toList()).getBytes(StandardCharsets.UTF_8), true);
         return edition;
@@ -388,25 +464,7 @@ public final class StudioStore {
         if (contents.length > MAX_FILE_BYTES) {
             throw new IOException("Studio file exceeds the size limit: " + file.getFileName());
         }
-        Path temp = Files.createTempFile(file.getParent(), "studio-", ".tmp");
-        try {
-            Files.write(temp, contents);
-            try {
-                if (replace) {
-                    Files.move(temp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-                } else {
-                    Files.move(temp, file, StandardCopyOption.ATOMIC_MOVE);
-                }
-            } catch (AtomicMoveNotSupportedException ex) {
-                if (replace) {
-                    Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
-                } else {
-                    Files.move(temp, file);
-                }
-            }
-        } finally {
-            Files.deleteIfExists(temp);
-        }
+        DurableFiles.write(file, contents, replace, false);
     }
 
     private YamlConfiguration encodeSong(Song song) {

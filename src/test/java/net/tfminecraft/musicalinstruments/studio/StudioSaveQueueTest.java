@@ -49,14 +49,14 @@ class StudioSaveQueueTest {
         var started = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         doAnswer(invocation -> {
-            Project snapshot = invocation.getArgument(0);
+            Project snapshot = invocation.getArgument(1);
             writes.add(snapshot);
             if (writes.size() == 1) {
                 started.countDown();
                 if (!release.await(5, TimeUnit.SECONDS)) throw new IOException("In-flight save timed out");
             }
             return invocation.callRealMethod();
-        }).when(fixture.store).save(any());
+        }).when(fixture.store).saveOwned(any(), any());
         Project firstEdit = new Project(original.song(), null, 80, false);
         Project finalEdit = new Project(original.song(), null, 180, true);
         try {
@@ -83,12 +83,12 @@ class StudioSaveQueueTest {
         Player player = fixture.player();
         fixture.studio.save(player, fixture.project(player));
         clearInvocations(fixture.store);
-        doThrow(new IOException("Storage stays unavailable")).when(fixture.store).save(any());
+        doThrow(new IOException("Storage stays unavailable")).when(fixture.store).saveOwned(any(), any());
         try {
             fixture.take(player, "retained_take");
             worker.submit(() -> {}).get(3, TimeUnit.SECONDS); // Failure completes before close.
             fixture.studio.close();
-            verify(fixture.store, times(3)).save(any()); // Initial attempt, closing attempt, one closing retry.
+            verify(fixture.store, times(3)).saveOwned(any(), any()); // Initial attempt, closing attempt, one closing retry.
             assertNotNull(fixture.studio.requireProject(player).pending());
             assertNull(new StudioStore(directory).project(player.getUniqueId()).orElseThrow().pending());
         } finally {
@@ -108,7 +108,7 @@ class StudioSaveQueueTest {
             started.countDown();
             if (!release.await(5, TimeUnit.SECONDS)) throw new IOException("Late save timed out");
             throw new IOException("The write failed after the shutdown deadline");
-        }).when(fixture.store).save(any());
+        }).when(fixture.store).saveOwned(any(), any());
         try {
             fixture.take(player, "take_to_retry_when_storage_recovers");
             assertTrue(started.await(2, TimeUnit.SECONDS));
@@ -117,11 +117,11 @@ class StudioSaveQueueTest {
             deadline.setLong(fixture.studio, System.nanoTime() - 1);
             release.countDown();
             worker.submit(() -> {}).get(3, TimeUnit.SECONDS);
-            verify(fixture.store, times(2)).save(any()); // Original project and one failed take write.
+            verify(fixture.store, times(2)).saveOwned(any(), any()); // Original project and one failed take write.
             assertNotNull(fixture.studio.requireProject(player).pending());
         } finally {
             release.countDown();
-            doCallRealMethod().when(fixture.store).save(any());
+            doCallRealMethod().when(fixture.store).saveOwned(any(), any());
             fixture.studio.close();
         }
     }
@@ -137,9 +137,9 @@ class StudioSaveQueueTest {
         fixture.studio.save(second, fixture.project(second));
         var writes = java.util.Collections.synchronizedList(new ArrayList<UUID>());
         doAnswer(invocation -> {
-            writes.add(((Project) invocation.getArgument(0)).song().owner());
+            writes.add(((Project) invocation.getArgument(1)).song().owner());
             return invocation.callRealMethod();
-        }).when(fixture.store).save(any());
+        }).when(fixture.store).saveOwned(any(), any());
         var started = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         worker.execute(() -> {
@@ -157,7 +157,7 @@ class StudioSaveQueueTest {
             worker.submit(() -> {}).get(10, TimeUnit.SECONDS);
             int olderWrites = writes.indexOf(second.getUniqueId());
             System.out.println("READINESS_FAIRNESS obsolete_edits_before_other_take=" + olderWrites);
-            assertTrue(olderWrites <= 2,
+            assertTrue(olderWrites >= 0 && olderWrites <= 2,
                     "Other musicians' final takes should not wait behind " + olderWrites + " obsolete edits");
         } finally {
             release.countDown();
@@ -183,7 +183,7 @@ class StudioSaveQueueTest {
                 throw new IOException("One transient final-save failure; subsequent saves would succeed");
             }
             return invocation.callRealMethod();
-        }).when(fixture.store).save(any());
+        }).when(fixture.store).saveOwned(any(), any());
         // The failure is discovered only after close has checked which writes need retrying.
         doAnswer(invocation -> {
             release.countDown();
@@ -216,12 +216,12 @@ class StudioSaveQueueTest {
         Project original = fixture.project(player);
         fixture.studio.save(player, original);
         Project edited = new Project(original.song(), null, 120, false);
-        doThrow(new IOException("One transient failure before the recording")).when(fixture.store).save(edited);
+        doThrow(new IOException("One transient failure before the recording")).when(fixture.store).saveOwned(any(), eq(edited));
         try {
             fixture.studio.edit(player, edited);
             worker.submit(() -> {}).get(3, TimeUnit.SECONDS);
             fixture.tick.run(); // Clock 1 observes the failure; the edit stays cached and unsaved.
-            doCallRealMethod().when(fixture.store).save(any());
+            doCallRealMethod().when(fixture.store).saveOwned(any(), any());
             fixture.studio.record(player, 2); // The take starts at clock 3.
             fixture.tick.run(); fixture.tick.run();
             fixture.studio.capture(player, "lute", "new_take", 1, 1);
@@ -263,7 +263,7 @@ class StudioSaveQueueTest {
             store = spy(new StudioStore(directory));
             studio = new StudioService(plugin, manager, store,
                     new StudioSettings(4, 3600, 1500, 6000, 32, 32, 2, 60, 200, 600, 20),
-                    StudioStation.none(), mock(DiscItems.class), worker);
+                    StudioStation.none(), mock(DiscItems.class), worker, TestIdentity.INSTANCE);
         }
 
         private Player player() {
@@ -307,10 +307,11 @@ class StudioSaveQueueTest {
         when(player.hasPermission("instruments.record")).thenReturn(true);
         when(server.getPlayer(owner)).thenReturn(player);
         var store = mock(StudioStore.class);
+        when(store.root()).thenReturn(directory);
         var worker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
         var studio = new StudioService(plugin, mock(InstrumentManager.class), store,
                 new StudioSettings(4, 3600, 1500, 6000, 32, 32, 60, 60, 200, 600, 20),
-                StudioStation.none(), mock(DiscItems.class), worker);
+                StudioStation.none(), mock(DiscItems.class), worker, TestIdentity.INSTANCE);
         var song = new Song(UUID.randomUUID(), owner, "Musician", "Song",
                 List.of(new Track(1, 20, 1, false, List.of(new Note(0, "lute", "note", 1, 1)))));
         studio.save(player, new Project(song, null, 100, false));

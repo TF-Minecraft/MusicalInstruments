@@ -65,6 +65,7 @@ public class InstrumentPlugin extends JavaPlugin {
         // ItemsAdder can enable after this plugin despite the softdepend, so check the station on the first tick.
         getServer().getScheduler().runTask(this, () -> studio.station().warnIfUnavailable(getLogger()));
         studioMenu = new StudioMenu(this, studio);
+        studio.startOwnership(studioMenu);
         StudioCommand musicCommand = new StudioCommand(studio, studioMenu);
         getCommand("music").setExecutor(musicCommand);
         getCommand("music").setTabCompleter(musicCommand);

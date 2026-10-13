@@ -20,7 +20,7 @@ class StudioStoreRecoveryTest {
     void oversizedSerializationCannotReplaceTheLastSavedFile() throws Exception {
         StudioStore store = new StudioStore(directory);
         Project project = project(); store.save(project);
-        Path selected = directory.resolve("projects/" + project.song().owner() + "/" + project.song().id() + ".yml");
+        Path selected = directory.resolve("character-projects/" + project.song().owner() + "/" + project.song().id() + ".yml");
         byte[] original = Files.readAllBytes(selected);
         YamlConfiguration oversized = mock(YamlConfiguration.class);
         when(oversized.saveToString()).thenReturn("x".repeat(StudioStore.MAX_FILE_BYTES + 1));
@@ -45,7 +45,7 @@ class StudioStoreRecoveryTest {
         store.save(original);
         UUID owner = original.song().owner();
         assertThrows(IllegalArgumentException.class, () -> store.project(owner, UUID.randomUUID()));
-        Files.delete(directory.resolve("projects/" + owner + "/" + original.song().id() + ".yml"));
+        Files.delete(directory.resolve("character-projects/" + owner + "/" + original.song().id() + ".yml"));
         assertThrows(IllegalArgumentException.class, () -> store.project(owner, original.song().id()));
         assertTrue(store.project(owner).isEmpty());
         assertTrue(store.summaries(owner).isEmpty());
@@ -55,7 +55,7 @@ class StudioStoreRecoveryTest {
     void malformedArchiveNamesAndMismatchedIdsAreRejected() throws Exception {
         StudioStore store = new StudioStore(directory);
         Project project = project(); store.save(project);
-        Path folder = directory.resolve("projects/" + project.song().owner());
+        Path folder = directory.resolve("character-projects/" + project.song().owner());
         Files.writeString(folder.resolve("ignore.tmp"), "ignored");
         assertEquals(List.of(ProjectSummary.of(project)), store.summaries(project.song().owner()));
         Files.writeString(folder.resolve("invalid.yml"), "invalid");
@@ -76,7 +76,7 @@ class StudioStoreRecoveryTest {
         assertEquals(2, store.summaries(song.owner()).size());
         store.delete(song.owner(), first.song().id());
         assertEquals(second, store.project(song.owner()).orElseThrow());
-        Files.delete(directory.resolve("projects/" + song.owner() + "/" + StudioStore.SELECTED));
+        Files.delete(directory.resolve("character-projects/" + song.owner() + "/" + StudioStore.SELECTED));
         store.delete(song.owner(), second.song().id());
         assertTrue(store.summaries(song.owner()).isEmpty());
     }

@@ -154,6 +154,14 @@ class InstrumentPluginTest {
         plugin.getConfig().set("lute.item", "v.note_block");
         server.getScheduler().performOneTick();
         PlayerMock player = server.addPlayer();
+        var identity = org.mockito.Mockito.mock(net.tfminecraft.tlibs.character.CharacterIdentity.class);
+        var session = new net.tfminecraft.tlibs.character.CharacterSession(
+                new net.tfminecraft.tlibs.character.CharacterRef(player.getUniqueId(), player.getUniqueId()), 1);
+        org.mockito.Mockito.when(identity.currentSession(player)).thenReturn(java.util.Optional.of(session));
+        org.mockito.Mockito.when(identity.isCurrent(session)).thenReturn(true);
+        server.getServicesManager().register(net.tfminecraft.tlibs.character.CharacterIdentity.class, identity, plugin,
+                org.bukkit.plugin.ServicePriority.Normal);
+
         player.getInventory().setItemInOffHand(new ItemStack(Material.NOTE_BLOCK));
         assertTrue(player.performCommand("music new Song"));
         assertTrue(player.performCommand("music record 1"));

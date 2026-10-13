@@ -25,7 +25,7 @@ class StudioStoreTest {
                 saved, 100, false);
         StudioStore store = new StudioStore(directory);
         store.save(project);
-        long bytes = Files.size(directory.resolve("projects").resolve(project.song().owner().toString()).resolve(project.song().id() + ".yml"));
+        long bytes = Files.size(directory.resolve("character-projects").resolve(project.song().owner().toString()).resolve(project.song().id() + ".yml"));
         assertTrue(bytes < 600_000, "A YAML list per note needed over 8 MB for this project: " + bytes);
         assertEquals(project, store.project(project.song().owner()).orElseThrow());
     }
@@ -64,8 +64,8 @@ class StudioStoreTest {
         store.save(first);
         store.save(first.accept());
         store.save(second);
-        Path folder = directory.resolve("projects").resolve(song.owner().toString());
-        try (var files = Files.list(directory.resolve("projects"))) {
+        Path folder = directory.resolve("character-projects").resolve(song.owner().toString());
+        try (var files = Files.list(directory.resolve("character-projects"))) {
             assertEquals(List.of(folder), files.toList());
         }
         try (var files = Files.list(folder)) {
@@ -86,7 +86,7 @@ class StudioStoreTest {
     void startupRemovesTemporaryFilesLeftByAnInterruptedWrite() throws Exception {
         Project project = project();
         new StudioStore(directory).save(project);
-        Path folder = directory.resolve("projects").resolve(project.song().owner().toString());
+        Path folder = directory.resolve("character-projects").resolve(project.song().owner().toString());
         Path leftover = Files.writeString(folder.resolve("studio-123.tmp"), "partial");
         Path unrelated = Files.writeString(folder.resolve("notes.tmp"), "kept");
         Path similar = Files.writeString(directory.resolve("songs").resolve("studio-readme.txt"), "kept");
@@ -220,7 +220,7 @@ class StudioStoreTest {
         Project healthy = new Project(new Song(UUID.randomUUID(), owner, "Musician", "Healthy", List.of()), null, 100, false);
         store.save(damaged);
         store.save(healthy);
-        Path folder = directory.resolve("projects").resolve(owner.toString());
+        Path folder = directory.resolve("character-projects").resolve(owner.toString());
         Path broken = folder.resolve(damaged.song().id() + ".yml");
         Files.writeString(broken, "format: 2\nid: [broken");
         Files.writeString(folder.resolve("notes.yml"), "not a project");
@@ -257,7 +257,7 @@ class StudioStoreTest {
         Project healthy = new Project(new Song(UUID.randomUUID(), owner, "Musician", "Healthy", List.of()), null, 100, false);
         store.save(healthy);
         store.save(damaged);
-        Path folder = directory.resolve("projects").resolve(owner.toString());
+        Path folder = directory.resolve("character-projects").resolve(owner.toString());
         Files.write(folder.resolve(damaged.song().id() + ".yml"), invalid);
         assertEquals(List.of(ProjectSummary.of(healthy)), store.summaries(owner));
         assertTrue(store.project(owner).isEmpty()); // The damaged project was the active one.
@@ -281,9 +281,9 @@ class StudioStoreTest {
         Project project = project();
         store.save(project);
         UUID anotherOwner = UUID.randomUUID();
-        Path foreign = directory.resolve("projects").resolve(anotherOwner.toString());
+        Path foreign = directory.resolve("character-projects").resolve(anotherOwner.toString());
         Files.createDirectories(foreign);
-        Files.copy(directory.resolve("projects").resolve(project.song().owner().toString()).resolve(project.song().id() + ".yml"),
+        Files.copy(directory.resolve("character-projects").resolve(project.song().owner().toString()).resolve(project.song().id() + ".yml"),
                 foreign.resolve(project.song().id() + ".yml"));
         Files.writeString(foreign.resolve(StudioStore.SELECTED), project.song().id().toString());
         assertTrue(store.project(anotherOwner).isEmpty());
@@ -313,7 +313,7 @@ class StudioStoreTest {
         StudioStore store = new StudioStore(directory);
         Project project = project();
         store.save(project);
-        Path file = directory.resolve("projects").resolve(project.song().owner().toString()).resolve(project.song().id() + ".yml");
+        Path file = directory.resolve("character-projects").resolve(project.song().owner().toString()).resolve(project.song().id() + ".yml");
         var modified = Files.getLastModifiedTime(file);
         Files.writeString(file, "x".repeat((int) Files.size(file))); // Same size and time: the index entry still applies.
         Files.setLastModifiedTime(file, modified);
@@ -326,7 +326,7 @@ class StudioStoreTest {
         Project project = project();
         UUID owner = project.song().owner();
         store.save(project);
-        Path folder = directory.resolve("projects").resolve(owner.toString());
+        Path folder = directory.resolve("character-projects").resolve(owner.toString());
         Path file = folder.resolve(project.song().id() + ".yml");
         var yaml = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(file.toFile());
         yaml.set("title", "Edited outside the studio");
@@ -349,7 +349,7 @@ class StudioStoreTest {
     void anUnwritableIndexLeavesTheLibraryUsable() throws Exception {
         StudioStore store = new StudioStore(directory);
         Project project = project();
-        Path index = directory.resolve("projects").resolve(project.song().owner().toString()).resolve(StudioStore.INDEX);
+        Path index = directory.resolve("character-projects").resolve(project.song().owner().toString()).resolve(StudioStore.INDEX);
         Files.createDirectories(index.resolve("blocked")); // A non-empty directory cannot be replaced by the cache file.
         store.save(project);
         assertEquals(List.of(ProjectSummary.of(project)), store.summaries(project.song().owner()));
@@ -363,7 +363,7 @@ class StudioStoreTest {
         store.save(project);
         assertThrows(IllegalArgumentException.class, () -> store.delete(owner, UUID.randomUUID()));
         store.delete(owner, project.song().id());
-        assertFalse(Files.exists(directory.resolve("projects").resolve(owner.toString()).resolve(StudioStore.SELECTED)));
+        assertFalse(Files.exists(directory.resolve("character-projects").resolve(owner.toString()).resolve(StudioStore.SELECTED)));
         assertTrue(store.project(owner).isEmpty());
         assertTrue(store.summaries(owner).isEmpty());
     }
@@ -377,8 +377,8 @@ class StudioStoreTest {
         store.save(other);
         assertEquals(List.of(ProjectSummary.of(first)), store.summaries(first.song().owner()));
         assertThrows(IllegalArgumentException.class, () -> store.project(first.song().owner(), other.song().id()));
-        Path copied = directory.resolve("projects").resolve(first.song().owner().toString()).resolve(other.song().id() + ".yml");
-        Files.copy(directory.resolve("projects").resolve(other.song().owner().toString()).resolve(other.song().id() + ".yml"), copied);
+        Path copied = directory.resolve("character-projects").resolve(first.song().owner().toString()).resolve(other.song().id() + ".yml");
+        Files.copy(directory.resolve("character-projects").resolve(other.song().owner().toString()).resolve(other.song().id() + ".yml"), copied);
         assertEquals(List.of(ProjectSummary.of(first)), store.summaries(first.song().owner()));
         assertThrows(IOException.class, () -> store.project(first.song().owner(), other.song().id()));
     }
