@@ -9,12 +9,13 @@
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <tlibs.version>2.3.0</tlibs.version>
     </properties>
     <dependencies>
         <dependency>
             <groupId>me.plugins</groupId>
             <artifactId>tlibs</artifactId>
-            <version>2.3.0</version>
+            <version>${tlibs.version}</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
