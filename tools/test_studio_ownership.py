@@ -1,6 +1,7 @@
 import base64
 import copy
 import importlib.util
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -211,6 +212,47 @@ class RollbackTests(unittest.TestCase):
             self.assertIn("changes project content", studio.inspect(self.root, "estates")["journals"][0]["error"])
             self.assertFalse(self.source.exists())
             self.assertEqual(self.after, self.target.read_bytes())
+
+    def test_chain_with_older_journal_newer_mtime_requires_checked_fresh_backup_passes(self):
+        first = self.journal
+        account, character, death = [str(uuid.uuid4()) for _ in range(3)]
+        last = self.root / 'character-projects' / character / (self.key + '.yml')
+        last.parent.mkdir(parents=True)
+        final = dict(self.output, **{'owner-account': account, 'owner-character': character})
+        final_bytes = yaml.safe_dump(final).encode()
+        last.write_bytes(final_bytes)
+        self.target.unlink()
+        self.journal = first.with_name(death + '.xml')
+        fields = dict(self.fields, death=death, **{'from-account': self.recipient, 'from-character': self.new,
+            self.key + '.from-account': self.recipient, self.key + '.from-character': self.new,
+            self.key + '.to-account': account, self.key + '.to-character': character,
+            self.key + '.source': str(self.target.relative_to(self.root)), self.key + '.target': str(last.relative_to(self.root)),
+            self.key + '.decision': f'EstateDecision[deathId={death}, testator={studio.reference(self.recipient, self.new)}, diedAt=Optional.empty, property=Character[ref={studio.reference(account, character)}], guildLocks=Frozen[], revision=1]'})
+        self.payload(fields, 'before', self.output)
+        self.payload(fields, 'after', final)
+        self.write(fields)
+        os.utime(first, ns=(3_000_000, 3_000_000))
+        os.utime(self.journal, ns=(1_000_000, 1_000_000))
+        original_first = first.read_bytes()
+        preview = studio.inspect(self.root, 'estates')
+        self.assertIn('both copies missing', preview['journals'][0]['records'][0]['result'])
+        self.assertEqual('safe offline rollback', preview['journals'][1]['records'][0]['result'])
+        result = self.apply()
+        self.assertNotIn('archived', result['journals'][0])
+        self.assertIn('archived', result['journals'][1])
+        self.assertEqual(original_first, first.read_bytes())
+        self.assertEqual(self.after, self.target.read_bytes())
+        self.assertFalse(last.exists())
+        self.assertEqual(final_bytes, (self.recovery / last.relative_to(self.root)).read_bytes())
+        again = studio.inspect(self.root, 'estates')
+        self.assertEqual('safe offline rollback', again['journals'][0]['records'][0]['result'])
+        next_backup = self.root / 'next-recovery'
+        final_report = studio.inspect(self.root, 'estates', True, next_backup)
+        self.assertIn('archived', final_report['journals'][0])
+        self.assertEqual(self.before, self.source.read_bytes())
+        self.assertEqual(self.after, (next_backup / self.target.relative_to(self.root)).read_bytes())
+        self.assertFalse(self.target.exists())
+        self.assertEqual([], studio.inspect(self.root, 'estates')['journals'])
 
 
 

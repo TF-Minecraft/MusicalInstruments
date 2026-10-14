@@ -25,8 +25,7 @@ final class StudioOwnership {
 
     private final StudioStore store;
     private final Path root;
-    private record Stamp(long size, java.nio.file.attribute.FileTime modified, Object key) {}
-    private record Locks(Stamp stamp, java.util.Set<UUID> characters) {}
+    private record Locks(String digest, java.util.Set<UUID> characters, java.util.Set<String> projects) {}
     private final java.util.Map<Path, Locks> lockCache = new java.util.HashMap<>();
     StudioOwnership(StudioStore store) { this.store = store; this.root = store.root(); }
 
@@ -34,56 +33,63 @@ final class StudioOwnership {
         if (!identity.heirsReady()) return;
         Path legacy = root.resolve("projects");
         if (!Files.isDirectory(legacy)) return;
+        IOException failure = null;
         for (Path folder : files(legacy)) {
-            if (!Files.isDirectory(folder)) { holdUnrecognized(folder); continue; }
-            UUID account;
-            try { account = UUID.fromString(folder.getFileName().toString()); }
-            catch (IllegalArgumentException ex) { holdUnrecognized(folder); continue; }
-            Path journalFile = root.resolve("ownership/migration").resolve(account + ".xml");
-            Properties journal = read(journalFile);
-            StudioIdentity.Owner to;
-            if (journal.isEmpty()) {
-                to = identity.heir(account).orElse(null);
-                if (to == null) continue;
-                journal.setProperty("format", "1");
-                journal.setProperty("kind", "migration");
-                journal.setProperty("from-account", account.toString());
-                journal.setProperty("to-account", to.account().toString());
-                journal.setProperty("to-character", to.character().toString());
-                for (Path source : projects(folder)) {
-                    String id = source.getFileName().toString().replace(".yml", "");
-                    byte[] bytes = Files.readAllBytes(source);
-                    try {
-                        UUID.fromString(id);
-                        var yaml = yaml(bytes);
-                        if (!Integer.valueOf(StudioStore.FORMAT).equals(yaml.get("format")) || !account.toString().equals(yaml.get("owner"))
-                                || !id.equals(yaml.get("id"))) throw new Conflict("Legacy project identity mismatch");
-                        plan(journal, id, source, store.projectFile(to.character(), UUID.fromString(id)), bytes, to);
-                    } catch (IOException | IllegalArgumentException ex) {
-                        journal.setProperty("held." + id, ex.getMessage());
-                        journal.setProperty("held-source." + id, Base64.getEncoder().encodeToString(bytes));
-                    }
+            try { migrate(identity, folder); }
+            catch (IOException ex) { if (failure == null) failure = ex; else failure.addSuppressed(ex); }
+        }
+        if (failure != null) throw failure;
+    }
+
+    private void migrate(StudioIdentity identity, Path folder) throws IOException {
+        if (!Files.isDirectory(folder)) { holdUnrecognized(folder); return; }
+        UUID account;
+        try { account = UUID.fromString(folder.getFileName().toString()); }
+        catch (IllegalArgumentException ex) { holdUnrecognized(folder); return; }
+        Path journalFile = root.resolve("ownership/migration").resolve(account + ".xml");
+        Properties journal = read(journalFile);
+        StudioIdentity.Owner to;
+        if (journal.isEmpty()) {
+            to = identity.heir(account).orElse(null);
+            if (to == null) return;
+            journal.setProperty("format", "1");
+            journal.setProperty("kind", "migration");
+            journal.setProperty("from-account", account.toString());
+            journal.setProperty("to-account", to.account().toString());
+            journal.setProperty("to-character", to.character().toString());
+            for (Path source : projects(folder)) {
+                String id = source.getFileName().toString().replace(".yml", "");
+                byte[] bytes = Files.readAllBytes(source);
+                try {
+                    UUID.fromString(id);
+                    var yaml = yaml(bytes);
+                    if (!Integer.valueOf(StudioStore.FORMAT).equals(yaml.get("format")) || !account.toString().equals(yaml.get("owner"))
+                            || !id.equals(yaml.get("id"))) throw new Conflict("Legacy project identity mismatch");
+                    plan(journal, id, source, store.projectFile(to.character(), UUID.fromString(id)), bytes, to);
+                } catch (IOException | IllegalArgumentException ex) {
+                    journal.setProperty("held." + id, ex.getMessage());
+                    journal.setProperty("held-source." + id, Base64.getEncoder().encodeToString(bytes));
                 }
-                Path selected = folder.resolve(StudioStore.SELECTED);
-                if (Files.exists(selected)) journal.setProperty("selected", Base64.getEncoder().encodeToString(Files.readAllBytes(selected)));
-                write(journalFile, journal); // Entire inventory/backup precedes the first publication.
-            } else {
-                to = owner(journal, "to");
             }
-            for (String id : ids(journal)) apply(journalFile, journal, id, () -> true, false);
-            if (!"true".equals(journal.getProperty("complete"))) {
-                String selected = journal.getProperty("selected");
-                Path target = store.directory(to.character()).resolve(StudioStore.SELECTED);
-                if (selected != null && !Files.exists(target)) {
-                    byte[] pointer = Base64.getDecoder().decode(selected);
-                    try {
-                        UUID id = UUID.fromString(new String(pointer, StandardCharsets.UTF_8).strip());
-                        if (Files.exists(store.projectFile(to.character(), id))) DurableFiles.write(target, pointer, false);
-                    } catch (IllegalArgumentException ex) { journal.setProperty("held.selected", "Invalid project selection"); }
-                }
-                journal.setProperty("complete", "true");
-                write(journalFile, journal);
+            Path selected = folder.resolve(StudioStore.SELECTED);
+            if (Files.exists(selected)) journal.setProperty("selected", Base64.getEncoder().encodeToString(Files.readAllBytes(selected)));
+            write(journalFile, journal); // Entire inventory/backup precedes the first publication.
+        } else {
+            to = owner(journal, "to");
+        }
+        for (String id : ids(journal)) apply(journalFile, journal, id, () -> true, false);
+        if (!"true".equals(journal.getProperty("complete"))) {
+            String selected = journal.getProperty("selected");
+            Path target = store.directory(to.character()).resolve(StudioStore.SELECTED);
+            if (selected != null && !Files.exists(target)) {
+                byte[] pointer = Base64.getDecoder().decode(selected);
+                try {
+                    UUID id = UUID.fromString(new String(pointer, StandardCharsets.UTF_8).strip());
+                    if (Files.exists(store.projectFile(to.character(), id))) DurableFiles.write(target, pointer, false);
+                } catch (IllegalArgumentException ex) { journal.setProperty("held.selected", "Invalid project selection"); }
             }
+            journal.setProperty("complete", "true");
+            write(journalFile, journal);
         }
     }
 
@@ -116,8 +122,9 @@ final class StudioOwnership {
             journal.setProperty("from-account", from.account().toString());
             journal.setProperty("from-character", from.character().toString());
         }
-        if (!death.toString().equals(journal.getProperty("death")) || !from.equals(owner(journal, "from")))
+        if (!from.equals(owner(journal, "from")))
             throw new Conflict("Estate journal identity differs from this death");
+        requireUnreserved(file, journal, store.directory(from.character()));
         for (String id : ids(journal)) {
             if ("moved".equals(journal.getProperty(id + ".state"))) continue;
             if (!exactDecision.equals(journal.getProperty(id + ".decision"))) {
@@ -159,8 +166,9 @@ final class StudioOwnership {
         Path file = root.resolve("ownership/estates").resolve(death + ".xml");
         Properties journal = read(file);
         boolean changed = false;
-        if (!journal.isEmpty() && (!death.toString().equals(journal.getProperty("death")) || !from.equals(owner(journal, "from"))))
+        if (!journal.isEmpty() && !from.equals(owner(journal, "from")))
             throw new Conflict("Estate journal identity differs from this death");
+        requireUnreserved(file, journal, store.directory(from.character()));
         for (Path source : projects(store.directory(from.character()))) {
             String id = source.getFileName().toString().replace(".yml", "");
             if ("moved".equals(journal.getProperty(id + ".state")))
@@ -219,6 +227,8 @@ final class StudioOwnership {
         if (!Files.exists(source) && "planned".equals(journal.getProperty(id + ".state")))
             throw new Conflict("Planned source project disappeared: " + source);
         if (!Files.exists(source) && !Files.exists(target)) throw new Conflict("Both published project copies disappeared");
+        if ("published".equals(journal.getProperty(id + ".state")) && !Files.exists(target))
+            throw new Conflict("Published project target disappeared; staff recovery required: " + target);
         if (Files.exists(target)) {
             if (!hash(Files.readAllBytes(target)).equals(journal.getProperty(id + ".after-hash")))
                 throw new Conflict("Recipient project conflicts: " + target);
@@ -237,22 +247,40 @@ final class StudioOwnership {
     }
 
     void requireWritable(UUID character) throws IOException {
+        for (String kind : List.of("migration", "estates")) for (Path file : files(root.resolve("ownership").resolve(kind)))
+            if (locks(file).characters().contains(character)) throw new Conflict("Studio ownership publication needs recovery: " + file);
+    }
+
+    // Copies at either end of an unfinished publication still belong to that operation.
+    private void requireUnreserved(Path current, Properties journal, Path folder) throws IOException {
+        java.util.Set<String> wanted = new java.util.HashSet<>();
+        for (String id : ids(journal)) if (!"moved".equals(journal.getProperty(id + ".state"))) wanted.add(id);
+        for (Path source : projects(folder)) wanted.add(source.getFileName().toString().replace(".yml", ""));
         for (String kind : List.of("migration", "estates")) for (Path file : files(root.resolve("ownership").resolve(kind))) {
-            var attributes = Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
-            Stamp stamp = new Stamp(attributes.size(), attributes.lastModifiedTime(), attributes.fileKey());
-            Locks cached = lockCache.get(file);
-            if (cached == null || !stamp.equals(cached.stamp())) {
-                Properties journal = read(file);
-                java.util.Set<UUID> pending = new java.util.HashSet<>();
-                for (String id : ids(journal)) if (!"moved".equals(journal.getProperty(id + ".state"))) {
-                    pending.add(owner(journal, id + ".to").character());
-                    if ("estate".equals(journal.getProperty("kind"))) pending.add(owner(journal, "from").character());
-                }
-                cached = new Locks(stamp, java.util.Set.copyOf(pending));
-                lockCache.put(file, cached);
-            }
-            if (cached.characters().contains(character)) throw new Conflict("Studio ownership publication needs recovery: " + file);
+            Locks pending = locks(file);
+            if (file.equals(current)) continue;
+            for (String id : pending.projects())
+                if (wanted.contains(id)) throw new Conflict("Project is still pending in another ownership journal: " + id);
         }
+    }
+
+    private Locks locks(Path file) throws IOException {
+        byte[] bytes = Files.readAllBytes(file);
+        String digest = hash(bytes);
+        Locks cached = lockCache.get(file);
+        if (cached == null || !digest.equals(cached.digest())) {
+            Properties journal = read(file, bytes);
+            java.util.Set<UUID> pending = new java.util.HashSet<>();
+            java.util.Set<String> projects = new java.util.HashSet<>();
+            for (String id : ids(journal)) if (!"moved".equals(journal.getProperty(id + ".state"))) {
+                projects.add(id);
+                pending.add(owner(journal, id + ".to").character());
+                if ("estate".equals(journal.getProperty("kind"))) pending.add(owner(journal, "from").character());
+            }
+            cached = new Locks(digest, java.util.Set.copyOf(pending), java.util.Set.copyOf(projects));
+            lockCache.put(file, cached);
+        }
+        return cached;
     }
 
     List<String> holdings(UUID character) throws IOException {
@@ -265,9 +293,21 @@ final class StudioOwnership {
         Properties journal = read(root.resolve("ownership/migration").resolve(from.account() + ".xml"));
         if (journal.isEmpty() || !"true".equals(journal.getProperty("complete")))
             throw new IOException("The account's reviewed legacy project migration is not complete");
-        if (from.character().toString().equals(journal.getProperty("to-character"))
-                && journal.stringPropertyNames().stream().anyMatch(key -> key.startsWith("held.")))
-            throw new Conflict("Legacy projects for this character remain held for staff");
+        if (from.character().toString().equals(journal.getProperty("to-character")))
+            for (String key : journal.stringPropertyNames()) if (key.startsWith("held.")
+                    && !(key.equals("held.selected") && invalidSelectionOnly(journal, legacy)))
+                throw new Conflict("Legacy projects for this character remain held for staff");
+    }
+
+    private boolean invalidSelectionOnly(Properties journal, Path legacy) throws IOException {
+        if (!"Invalid project selection".equals(journal.getProperty("held.selected")) || journal.getProperty("selected") == null) return false;
+        byte[] pointer;
+        try { pointer = Base64.getDecoder().decode(journal.getProperty("selected")); }
+        catch (IllegalArgumentException malformed) { return false; }
+        Path source = legacy.resolve(StudioStore.SELECTED);
+        if (!Files.isRegularFile(source) || !java.util.Arrays.equals(pointer, Files.readAllBytes(source))) return false;
+        try { UUID.fromString(new String(pointer, StandardCharsets.UTF_8).strip()); return false; }
+        catch (IllegalArgumentException invalid) { return true; }
     }
 
     private Path path(String relative) { return root.resolve(relative).normalize(); }
@@ -278,7 +318,9 @@ final class StudioOwnership {
         catch (IllegalArgumentException | NullPointerException ex) { throw new Conflict("Invalid journal owner"); }
     }
 
-    static Properties read(Path file) throws IOException {
+    static Properties read(Path file) throws IOException { return read(file, Files.exists(file) ? Files.readAllBytes(file) : null); }
+
+    private static Properties read(Path file, byte[] journalBytes) throws IOException {
         class Journal extends Properties {
             boolean loading;
             @Override public synchronized Object put(Object key, Object value) {
@@ -287,7 +329,7 @@ final class StudioOwnership {
             }
         }
         Journal result = new Journal();
-        if (Files.exists(file)) try (var input = Files.newInputStream(file)) {
+        if (journalBytes != null) try (var input = new ByteArrayInputStream(journalBytes)) {
             result.loading = true;
             try { result.loadFromXML(input); }
             catch (java.util.InvalidPropertiesFormatException | IllegalArgumentException ex) { throw new Conflict("Unreadable ownership journal"); }
@@ -296,6 +338,19 @@ final class StudioOwnership {
             String kind = result.getProperty("kind");
             if (!"migration".equals(kind) && !"estate".equals(kind)) throw new Conflict("Unknown ownership journal kind");
             try {
+                if (!file.getParent().getFileName().toString().equals("estate".equals(kind) ? "estates" : "migration"))
+                    throw new Conflict("Ownership journal kind differs from its path");
+                if ("estate".equals(kind)) {
+                    owner(result, "from");
+                    if (!file.getFileName().toString().equals(UUID.fromString(result.getProperty("death")) + ".xml"))
+                        throw new Conflict("Estate death differs from its journal path");
+                } else if (result.getProperty("from-account") != null) {
+                    UUID account = UUID.fromString(result.getProperty("from-account"));
+                    if (!file.getFileName().toString().equals(account + ".xml") || !account.equals(owner(result, "to").account()))
+                        throw new Conflict("Legacy account differs from its journal path or reviewed heir");
+                } else if (!file.getFileName().toString().matches("unrecognized-[0-9a-f]{64}\\.xml") || !ids(result).isEmpty()) {
+                    throw new Conflict("Unattributed ownership journal needs staff review");
+                }
                 for (String id : ids(result)) {
                     UUID.fromString(id);
                     if (!List.of("planned", "published", "moved").contains(result.getProperty(id + ".state")))

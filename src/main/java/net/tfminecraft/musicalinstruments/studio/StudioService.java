@@ -138,11 +138,8 @@ public final class StudioService {
                 () -> new IllegalArgumentException("Choose an active character before using the recording studio"));
         if (!current(token, player)) throw new IllegalArgumentException("Your character session changed");
         owners.put(token.owner().character(), token.owner());
+        if (!migrationAttempted) migrateOwnership();
         try {
-            if (!migrationAttempted && identity.heirsReady()) {
-                ownership.migrate(identity);
-                migrationAttempted = true;
-            }
             ownership.requireWritable(token.owner().character());
         }
         catch (IOException ex) { throw new IllegalArgumentException("Studio ownership needs recovery: " + ex.getMessage(), ex); }
@@ -157,11 +154,21 @@ public final class StudioService {
 
     public void startOwnership(StudioMenu menu) {
         plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
-            try { ownership.migrate(identity); migrationAttempted = identity.heirsReady(); }
-            catch (IOException ex) { plugin.getLogger().warning("Studio migration held: " + ex.getMessage()); }
+            migrateOwnership();
         }, 1L, 72_000L);
         if (identity instanceof CharacterStudioBridge) CharacterStudioBridge.start(plugin, this, menu);
         StudioEstate.startIfAvailable(plugin, this, ownership);
+    }
+
+    private void migrateOwnership() {
+        if (!identity.heirsReady()) return;
+        migrationAttempted = true;
+        try { ownership.migrate(identity); }
+        catch (IOException ex) {
+            var causes = new java.util.StringJoiner("; "); causes.add(ex.getMessage());
+            for (Throwable other : ex.getSuppressed()) causes.add(other.getMessage());
+            plugin.getLogger().warning("Studio migration held: " + causes);
+        }
     }
 
     boolean quiescent(UUID character) {
@@ -307,7 +314,7 @@ public final class StudioService {
     }
 
     public void requireIdle(Player player) {
-        if (recordings.containsKey(owner(player))) {
+        if (recordings.containsKey(player.getUniqueId())) {
             throw new IllegalArgumentException("Stop the recording with /music stop first");
         }
         CompletableFuture<Void> pending = pendingSaves.get(owner(player));
