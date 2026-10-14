@@ -151,6 +151,58 @@ class StudioOwnershipTest {
         assertEquals(from.character().toString(), journal.getProperty(project.song().id() + ".from-character"));
     }
 
+    @Test void completedEstateReconciliationPreservesJournalBytesAndChainOrder() throws Exception {
+        StudioStore store = store(); Project project = project(); store.saveOwned(from, project);
+        StudioOwnership ownership = new StudioOwnership(store); UUID first = UUID.randomUUID(), second = UUID.randomUUID();
+        StudioIdentity.Owner last = new StudioIdentity.Owner(UUID.randomUUID(), UUID.randomUUID());
+        List<String> moved = transfer(ownership, first, "one", from, to, () -> true);
+        Path firstJournal = root.resolve("ownership/estates/" + first + ".xml");
+        var firstTime = java.nio.file.attribute.FileTime.fromMillis(1_000_000);
+        Files.setLastModifiedTime(firstJournal, firstTime);
+        byte[] firstBytes = Files.readAllBytes(firstJournal);
+        assertEquals(moved, transfer(ownership, second, "one", to, last, () -> true));
+        Path secondJournal = root.resolve("ownership/estates/" + second + ".xml");
+        var secondTime = java.nio.file.attribute.FileTime.fromMillis(2_000_000);
+        Files.setLastModifiedTime(secondJournal, secondTime);
+        byte[] secondBytes = Files.readAllBytes(secondJournal);
+        byte[] projectBytes = Files.readAllBytes(store.projectFile(last.character(), project.song().id()));
+
+        assertEquals(moved, transfer(new StudioOwnership(store()), first, "one", from, to, () -> true));
+        assertArrayEquals(firstBytes, Files.readAllBytes(firstJournal));
+        assertEquals(firstTime, Files.getLastModifiedTime(firstJournal));
+        assertEquals(moved, retained(ownership, first, "two frozen", from));
+        assertArrayEquals(firstBytes, Files.readAllBytes(firstJournal));
+        assertEquals(firstTime, Files.getLastModifiedTime(firstJournal));
+        assertArrayEquals(secondBytes, Files.readAllBytes(secondJournal));
+        assertEquals(secondTime, Files.getLastModifiedTime(secondJournal));
+        assertTrue(Files.getLastModifiedTime(secondJournal).compareTo(Files.getLastModifiedTime(firstJournal)) > 0);
+        assertArrayEquals(projectBytes, Files.readAllBytes(store.projectFile(last.character(), project.song().id())));
+        assertFalse(Files.exists(store.projectFile(from.character(), project.song().id())));
+        assertFalse(Files.exists(store.projectFile(to.character(), project.song().id())));
+    }
+
+    @Test void retainedPlanWritesOnlyWhenSupersessionRemovesAnEntry() throws Exception {
+        StudioStore store = store(); Project project = project(); store.saveOwned(from, project);
+        StudioOwnership ownership = new StudioOwnership(store); UUID death = UUID.randomUUID();
+        AtomicInteger checks = new AtomicInteger();
+        assertThrows(IOException.class, () -> transfer(ownership, death, "one", from, to, () -> checks.incrementAndGet() == 1));
+        Path file = root.resolve("ownership/estates/" + death + ".xml");
+        var unchanged = java.nio.file.attribute.FileTime.fromMillis(1_000_000);
+        Files.setLastModifiedTime(file, unchanged); byte[] before = Files.readAllBytes(file);
+        assertTrue(retained(ownership, death, "one", from).isEmpty());
+        assertArrayEquals(before, Files.readAllBytes(file));
+        assertEquals(unchanged, Files.getLastModifiedTime(file));
+        assertTrue(retained(ownership, death, "two frozen", from).isEmpty());
+        assertFalse(java.util.Arrays.equals(before, Files.readAllBytes(file)));
+        assertFalse(StudioOwnership.read(file).containsKey(project.song().id() + ".state"));
+        byte[] after = Files.readAllBytes(file); Files.setLastModifiedTime(file, unchanged);
+        assertTrue(retained(ownership, death, "two frozen", from).isEmpty());
+        assertArrayEquals(after, Files.readAllBytes(file));
+        assertEquals(unchanged, Files.getLastModifiedTime(file));
+        assertTrue(Files.exists(store.projectFile(from.character(), project.song().id())));
+        assertFalse(Files.exists(store.projectFile(to.character(), project.song().id())));
+    }
+
     @Test void decisionGuardsPrecedeEveryPropertyPublicationAndSourceRemoval() throws Exception {
         StudioStore store = store(); Project project = project(); store.saveOwned(from, project);
         StudioOwnership ownership = new StudioOwnership(store); UUID death = UUID.randomUUID();

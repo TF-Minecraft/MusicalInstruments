@@ -108,6 +108,7 @@ final class StudioOwnership {
         long revision = validateDecision(exactDecision, death, from, to);
         Path file = root.resolve("ownership/estates").resolve(death + ".xml");
         Properties journal = read(file);
+        boolean changed = journal.isEmpty();
         if (journal.isEmpty()) {
             journal.setProperty("format", "1");
             journal.setProperty("kind", "estate");
@@ -124,7 +125,7 @@ final class StudioOwnership {
                 if (!"planned".equals(journal.getProperty(id + ".state"))
                         || Files.exists(path(journal.getProperty(id + ".target"))))
                     throw new Conflict("Stale partial transfer needs staff recovery: " + id);
-                removeEntry(journal, id);
+                removeEntry(journal, id); changed = true;
             }
         }
         if (!guard.getAsBoolean()) throw new IOException("Estate decision no longer holds");
@@ -145,8 +146,9 @@ final class StudioOwnership {
             journal.setProperty(id + ".from-character", from.character().toString());
             journal.setProperty(id + ".decision", exactDecision);
             journal.setProperty(id + ".revision", Long.toString(revision));
+            changed = true;
         }
-        write(file, journal);
+        if (changed) write(file, journal);
         for (String id : ids(journal)) {
             if (!"moved".equals(journal.getProperty(id + ".state"))) apply(file, journal, id, guard, true);
         }
@@ -156,6 +158,7 @@ final class StudioOwnership {
     List<String> retainedReceipts(UUID death, String exactDecision, StudioIdentity.Owner from) throws IOException {
         Path file = root.resolve("ownership/estates").resolve(death + ".xml");
         Properties journal = read(file);
+        boolean changed = false;
         if (!journal.isEmpty() && (!death.toString().equals(journal.getProperty("death")) || !from.equals(owner(journal, "from"))))
             throw new Conflict("Estate journal identity differs from this death");
         for (Path source : projects(store.directory(from.character()))) {
@@ -168,10 +171,10 @@ final class StudioOwnership {
             if (!exactDecision.equals(journal.getProperty(id + ".decision"))) {
                 if (!"planned".equals(journal.getProperty(id + ".state")) || Files.exists(path(journal.getProperty(id + ".target"))))
                     throw new Conflict("Stale partial transfer needs staff recovery: " + id);
-                removeEntry(journal, id);
+                removeEntry(journal, id); changed = true;
             }
         }
-        if (!journal.isEmpty()) write(file, journal);
+        if (changed) write(file, journal);
         return ids(journal).stream().filter(id -> "moved".equals(journal.getProperty(id + ".state"))).toList();
     }
 
