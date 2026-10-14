@@ -133,12 +133,9 @@ public final class StudioService {
     public StudioSettings settings() { return settings; }
     public StudioStation station() { return station; }
 
+    /** The full ownership check for one change; callers pass the token on rather than checking again. */
     public StudioIdentity.Token token(Player player) {
-        StudioIdentity.Token token = identity.current(player).orElseThrow(
-                () -> new IllegalArgumentException("Choose an active character before using the recording studio"));
-        if (!current(token, player)) throw new IllegalArgumentException("Your character session changed");
-        owners.put(token.owner().character(), token.owner());
-        if (!migrationAttempted) migrateOwnership();
+        StudioIdentity.Token token = session(player);
         try {
             ownership.requireWritable(token.owner().character());
         }
@@ -146,11 +143,25 @@ public final class StudioService {
         return token;
     }
 
+    // Reads need only the current session: every change, menu and dialog first passes token().
+    private StudioIdentity.Token session(Player player) {
+        StudioIdentity.Token token = identity.current(player).orElseThrow(
+                () -> new IllegalArgumentException("Choose an active character before using the recording studio"));
+        if (!current(token, player)) throw new IllegalArgumentException("Your character session changed");
+        owners.put(token.owner().character(), token.owner());
+        if (!migrationAttempted) migrateOwnership();
+        return token;
+    }
+
+    // Keeps the recording refusal ahead of the ownership check, as requireIdle always did.
+    private StudioIdentity.Token idleToken(Player player) {
+        requireNotRecording(player);
+        return token(player);
+    }
+
     public boolean current(StudioIdentity.Token token, Player player) {
         return token != null && token.owner().account().equals(player.getUniqueId()) && identity.current(token);
     }
-
-    private UUID owner(Player player) { return token(player).owner().character(); }
 
     public void startOwnership(StudioMenu menu) {
         plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
@@ -193,20 +204,25 @@ public final class StudioService {
                 capture.notes.size(), countdown, false);
     }
 
-    public Project project(Player player) throws IOException {
-        Project project = projects.get(owner(player));
+    public Project project(Player player) throws IOException { return project(session(player)); }
+
+    private Project project(StudioIdentity.Token token) throws IOException {
+        UUID owner = token.owner().character();
+        Project project = projects.get(owner);
         if (project == null) {
-            project = store.project(owner(player)).orElse(null);
+            project = store.project(owner).orElse(null);
             if (project != null) {
-                requireOwner(player, project);
-                projects.put(owner(player), project);
+                requireOwner(token, project);
+                projects.put(owner, project);
             }
         }
         return project;
     }
 
-    public Project requireProject(Player player) throws IOException {
-        Project project = project(player);
+    public Project requireProject(Player player) throws IOException { return requireProject(session(player)); }
+
+    private Project requireProject(StudioIdentity.Token token) throws IOException {
+        Project project = project(token);
         if (project == null) {
             throw new IllegalArgumentException("Create a project with /music new <title> first");
         }
@@ -214,79 +230,94 @@ public final class StudioService {
     }
 
     public void create(Player player, String title, boolean reset) throws IOException {
-        requireSaved(player);
-        Project previous = project(player);
+        StudioIdentity.Token token = idleToken(player);
+        requireSaved(player, token);
+        Project previous = project(token);
         // Without an active project to replace, a reset creates another project.
-        if (!reset || previous == null) requireProjectSpace(player);
-        persist(player); // A project whose last write failed is written before another replaces it.
+        if (!reset || previous == null) requireProjectSpace(token);
+        persist(player, token); // A project whose last write failed is written before another replaces it.
         UUID id = reset && previous != null ? previous.song().id() : UUID.randomUUID();
-        save(player, new Project(new Song(id, player.getUniqueId(), player.getName(), title, List.of()),
+        save(player, token, new Project(new Song(id, player.getUniqueId(), player.getName(), title, List.of()),
                 null, 100, true));
         stopPreview(player);
     }
 
-    public void requireProjectSpace(Player player) throws IOException {
-        if (listProjects(player).size() >= MAX_PROJECTS) {
+    public void requireProjectSpace(Player player) throws IOException { requireProjectSpace(session(player)); }
+
+    private void requireProjectSpace(StudioIdentity.Token token) throws IOException {
+        if (listProjects(token).size() >= MAX_PROJECTS) {
             throw new IllegalArgumentException("Your studio is full (36 projects). Delete an old project first: right-click its song in the library");
         }
     }
 
     /** Loads only the requested project; a cached version may contain changes not yet written. */
-    public Project project(Player player, UUID id) throws IOException {
-        Project current = projects.get(owner(player));
+    public Project project(Player player, UUID id) throws IOException { return project(session(player), id); }
+
+    private Project project(StudioIdentity.Token token, UUID id) throws IOException {
+        UUID owner = token.owner().character();
+        Project current = projects.get(owner);
         if (current != null && current.song().id().equals(id)) return current;
-        Project loaded = store.project(owner(player), id);
-        requireOwner(player, loaded);
+        Project loaded = store.project(owner, id);
+        requireOwner(token, loaded);
         return loaded;
     }
 
     /** Deletes the project only if it still matches what the player confirmed. */
     public void deleteProject(Player player, Project expected) throws IOException {
-        requireSaved(player); // A queued write would bring the deleted project back.
-        requireOwner(player, expected);
+        StudioIdentity.Token token = idleToken(player);
+        UUID owner = token.owner().character();
+        requireSaved(player, token); // A queued write would bring the deleted project back.
+        requireOwner(token, expected);
         UUID id = expected.song().id();
         // Summaries omit notes, mix and settings, so they cannot protect a stale confirmation.
-        if (!project(player, id).equals(expected)) {
+        if (!project(token, id).equals(expected)) {
             throw new IllegalArgumentException("The project changed. Open the delete confirmation again");
         }
-        store.delete(owner(player), id);
-        Project current = projects.get(owner(player));
+        store.delete(owner, id);
+        Project current = projects.get(owner);
         if (current != null && current.song().id().equals(id)) {
-            projects.remove(owner(player));
-            unsaved.remove(owner(player));
+            projects.remove(owner);
+            unsaved.remove(owner);
             stopPreview(player);
         }
         player.sendMessage("Deleted '" + expected.song().title() + "'. Published discs keep their music.");
     }
 
-    public List<ProjectSummary> listProjects(Player player) throws IOException {
+    public List<ProjectSummary> listProjects(Player player) throws IOException { return listProjects(session(player)); }
+
+    private List<ProjectSummary> listProjects(StudioIdentity.Token token) throws IOException {
+        UUID owner = token.owner().character();
         Map<UUID, ProjectSummary> all = new LinkedHashMap<>();
-        for (ProjectSummary summary : store.summaries(owner(player))) all.put(summary.id(), summary);
+        for (ProjectSummary summary : store.summaries(owner)) all.put(summary.id(), summary);
         // An uncached project matches its files; a cached one may be newer than them.
-        Project active = projects.get(owner(player));
+        Project active = projects.get(owner);
         if (active != null) all.put(active.song().id(), ProjectSummary.of(active));
         return all.values().stream().sorted(ProjectSummary.ORDER).toList();
     }
 
     public void selectProject(Player player, UUID id) throws IOException {
-        Project current = project(player);
+        StudioIdentity.Token token = token(player);
+        UUID owner = token.owner().character();
+        Project current = project(token);
         if (current != null && current.song().id().equals(id)) return;
-        requireSaved(player); // The next project is read from its file, which a queued write could still change.
-        Project next = store.project(owner(player), id);
-        requireOwner(player, next);
-        persist(player);
-        store.select(owner(player), id); // Both projects already match their files.
-        projects.put(owner(player), next);
+        requireSaved(player, token); // The next project is read from its file, which a queued write could still change.
+        Project next = store.project(owner, id);
+        requireOwner(token, next);
+        persist(player, token);
+        store.select(owner, id); // Both projects already match their files.
+        projects.put(owner, next);
         stopPreview(player);
     }
 
     /** Writes the project before it becomes the active one. Used when creating or replacing a project. */
-    public void save(Player player, Project project) throws IOException {
-        requireOwner(player, project);
-        requireSaved(player);
-        store.saveOwned(token(player).owner(), project); // Persist successfully before replacing the in-memory version.
-        projects.put(owner(player), project);
-        unsaved.remove(owner(player));
+    public void save(Player player, Project project) throws IOException { save(player, token(player), project); }
+
+    private void save(Player player, StudioIdentity.Token token, Project project) throws IOException {
+        requireOwner(token, project);
+        requireSaved(player, token);
+        store.saveOwned(token.owner(), project); // Persist successfully before replacing the in-memory version.
+        projects.put(token.owner().character(), project);
+        unsaved.remove(token.owner().character());
     }
 
     /**
@@ -294,44 +325,61 @@ public final class StudioService {
      * earlier write. If that write fails, the change stays in memory and is written again.
      */
     public void edit(Player player, Project project) {
-        requireOwner(player, project);
-        requireIdle(player);
-        projects.put(owner(player), project);
-        unsaved.add(owner(player));
-        queueSave(token(player).owner(), project);
+        StudioIdentity.Token token = token(player);
+        UUID owner = token.owner().character();
+        requireOwner(token, project);
+        requireIdle(player, token);
+        projects.put(owner, project);
+        unsaved.add(owner);
+        queueSave(token.owner(), project);
     }
 
-    private void requireOwner(Player player, Project project) {
-        StudioIdentity.Owner ref = token(player).owner();
-        try { store.requireAuthority(ref, project.song().id(), project.song().owner()); }
+    private void requireOwner(StudioIdentity.Token token, Project project) {
+        try { store.requireAuthority(token.owner(), project.song().id(), project.song().owner()); }
         catch (IOException ex) { throw new IllegalArgumentException("Could not verify your project's owner", ex); }
     }
 
     // Retries a write that failed. A project with no failed write already matches its files.
-    private void persist(Player player) throws IOException {
-        Project current = projects.get(owner(player));
-        if (unsaved.contains(owner(player))) save(player, current);
+    private void persist(Player player, StudioIdentity.Token token) throws IOException {
+        UUID owner = token.owner().character();
+        if (unsaved.contains(owner)) save(player, token, projects.get(owner));
     }
 
     public void requireIdle(Player player) {
+        requireNotRecording(player);
+        requireIdle(player, session(player));
+    }
+
+    private void requireNotRecording(Player player) {
         if (recordings.containsKey(player.getUniqueId())) {
             throw new IllegalArgumentException("Stop the recording with /music stop first");
         }
-        CompletableFuture<Void> pending = pendingSaves.get(owner(player));
-        if (pending != null && pending.isDone()) completeSave(owner(player), pending);
+    }
+
+    private void requireIdle(Player player, StudioIdentity.Token token) {
+        requireNotRecording(player);
+        UUID owner = token.owner().character();
+        CompletableFuture<Void> pending = pendingSaves.get(owner);
+        if (pending != null && pending.isDone()) completeSave(owner, pending);
     }
 
     /** Also requires the project's files to be current, for changes that read or remove them. */
     public void requireSaved(Player player) {
-        requireIdle(player);
-        if (pendingSaves.containsKey(owner(player))) {
+        requireNotRecording(player);
+        requireSaved(player, session(player));
+    }
+
+    private void requireSaved(Player player, StudioIdentity.Token token) {
+        requireIdle(player, token);
+        if (pendingSaves.containsKey(token.owner().character())) {
             throw new IllegalArgumentException("Your project is still saving. Try again shortly");
         }
     }
 
     public void record(Player player, int slot) throws IOException {
-        requireIdle(player);
-        Project project = requireProject(player);
+        StudioIdentity.Token token = idleToken(player);
+        requireIdle(player, token);
+        Project project = requireProject(token);
         if (project.pending() != null) {
             throw new IllegalArgumentException("Use /music keep or /music discard for the previous take first");
         }
@@ -345,7 +393,7 @@ public final class StudioService {
         }
         stopPreview(player);
         capacity();
-        recordings.put(player.getUniqueId(), new Capture(project, slot, clock + settings.countInTicks(), token(player)));
+        recordings.put(player.getUniqueId(), new Capture(project, slot, clock + settings.countInTicks(), token));
         player.sendMessage("Recording starts in " + settings.countInTicks() / 20 + " seconds. Play with the hotbar, "
                 + "or right-click your instrument for the keyboard. /music stop ends the take.");
     }
@@ -389,8 +437,9 @@ public final class StudioService {
     }
 
     public void preview(Player player, boolean pending) throws IOException {
-        requireIdle(player);
-        Project project = requireProject(player);
+        StudioIdentity.Token token = idleToken(player);
+        requireIdle(player, token);
+        Project project = requireProject(token);
         Song song = project.song();
         if (pending) {
             Track take = project.pending();
@@ -406,26 +455,27 @@ public final class StudioService {
         if (!song.audible()) {
             throw new IllegalArgumentException("Every saved track is muted or silent. Unmute or raise a track first");
         }
-        previewSong(player, song);
+        previewSong(player, token, song);
         player.sendMessage(pending ? "Previewing the new take with the other tracks." : "Previewing the saved mix.");
     }
 
     public void previewTrack(Player player, int slot) throws IOException {
-        requireIdle(player);
-        Song song = requireProject(player).song();
+        StudioIdentity.Token token = idleToken(player);
+        requireIdle(player, token);
+        Song song = requireProject(token).song();
         Track track = song.track(slot);
         if (track == null) throw new IllegalArgumentException("Record and keep this track first");
         if (track.muted()) throw new IllegalArgumentException("Unmute this track to listen to it");
         Song single = new Song(song.id(), song.owner(), song.author(), song.title(), List.of(track));
         if (!single.audible()) throw new IllegalArgumentException("Raise this track's volume to listen to it");
-        previewSong(player, single);
+        previewSong(player, token, single);
         player.sendMessage("Listening to saved track " + slot + ".");
     }
 
-    private void previewSong(Player player, Song song) {
+    private void previewSong(Player player, StudioIdentity.Token token, Song song) {
         stopPreview(player);
         capacity();
-        previews.put(player.getUniqueId(), new Preview(song, clock + 1, token(player)));
+        previews.put(player.getUniqueId(), new Preview(song, clock + 1, token));
     }
 
     private void stopPreview(Player player) {
@@ -450,26 +500,28 @@ public final class StudioService {
     }
 
     public void publish(Player player) throws IOException {
-        requireIdle(player);
+        StudioIdentity.Token token = idleToken(player);
+        requireIdle(player, token);
         requireBlank(player);
-        Song edition = publishEdition(player);
+        Song edition = publishEdition(player, token);
         player.getInventory().setItemInMainHand(discs.disc(edition));
         player.sendMessage("Published '" + edition.title() + "'. Existing discs will keep this edition.");
     }
 
     public ItemStack publishOnDisc(Player player, ItemStack disc) throws IOException {
-        requireIdle(player);
+        StudioIdentity.Token token = idleToken(player);
+        requireIdle(player, token);
         if (!discs.musicDisc(disc) || disc.getAmount() != 1) {
             throw new IllegalArgumentException("Pick up one music disc and place it on Publish full song");
         }
-        Song edition = publishEdition(player);
+        Song edition = publishEdition(player, token);
         ItemStack result = discs.disc(edition, disc);
         player.sendMessage("Published '" + edition.title() + "' on your disc. Other copies keep their previous music.");
         return result;
     }
 
-    private Song publishEdition(Player player) throws IOException {
-        Project project = requireProject(player);
+    private Song publishEdition(Player player, StudioIdentity.Token token) throws IOException {
+        Project project = requireProject(token);
         if (project.pending() != null) {
             throw new IllegalArgumentException("Keep or discard your pending take first");
         }
@@ -521,9 +573,10 @@ public final class StudioService {
     }
 
     public void publishFromInventory(Player player) throws IOException {
-        requireIdle(player);
+        StudioIdentity.Token token = idleToken(player);
+        requireIdle(player, token);
         DiscSlot slot = discSlot(player, true); // Check space before writing an edition or consuming a disc.
-        Song edition = publishEdition(player);
+        Song edition = publishEdition(player, token);
         slot.replace(discs.disc(edition));
         player.sendMessage("Published '" + edition.title() + "' on a blank disc from your inventory.");
     }

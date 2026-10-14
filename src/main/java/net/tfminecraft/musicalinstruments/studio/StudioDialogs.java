@@ -47,6 +47,7 @@ public final class StudioDialogs {
 
     public void create(Player player, Location station) throws IOException {
         studio.requireIdle(player);
+        StudioIdentity.Token token = studio.token(player);
         studio.requireProjectSpace(player);
         AtomicBoolean used = new AtomicBoolean();
         Dialog dialog = Dialog.create(builder -> builder.empty()
@@ -57,29 +58,30 @@ public final class StudioDialogs {
                         .canCloseWithEscape(true).build())
                 .type(DialogType.confirmation(
                         ActionButton.create(Component.text("Create", NamedTextColor.GREEN), null, 150,
-                                action(player, station, used, (target, view) -> {
+                                action(player, token, station, used, (target, view) -> {
                                     String title = view.getText("title");
                                     if (title == null) throw new IllegalArgumentException("Enter a song title");
                                     studio.create(target, title.strip(), false);
                                 })),
                         ActionButton.create(Component.text("Back", NamedTextColor.GRAY), null, 150,
-                                action(player, station, used, (target, view) -> {}, library)))));
+                                action(player, token, station, used, (target, view) -> {}, library)))));
         player.closeInventory();
         player.showDialog(dialog);
     }
 
     public void rename(Player player, Location station) throws IOException {
         studio.requireIdle(player);
+        StudioIdentity.Token token = studio.token(player);
         Project project = studio.requireProject(player);
         AtomicBoolean used = new AtomicBoolean();
         UUID id = project.song().id();
-        var accept = action(player, station, used, (target, view) -> {
+        var accept = action(player, token, station, used, (target, view) -> {
             String title = view.getText("title");
             if (title == null) throw new IllegalArgumentException("Please enter a title");
             Project current = studio.requireProject(target);
             applySettings(target, id, title, current.bpm(), current.metronome());
         });
-        var cancel = action(player, station, used, (target, view) -> {});
+        var cancel = action(player, token, station, used, (target, view) -> {});
         Dialog dialog = Dialog.create(builder -> builder.empty()
                 .base(DialogBase.builder(Component.text("Rename project", NamedTextColor.GOLD))
                         .inputs(List.of(DialogInput.text("title", Component.text("Song title"))
@@ -94,6 +96,7 @@ public final class StudioDialogs {
 
     public void reset(Player player, Location station) throws IOException {
         studio.requireIdle(player);
+        StudioIdentity.Token token = studio.token(player);
         Project project = studio.requireProject(player);
         AtomicBoolean used = new AtomicBoolean();
         Dialog dialog = Dialog.create(builder -> builder.empty()
@@ -103,20 +106,21 @@ public final class StudioDialogs {
                                         + "'. Published discs keep their music.")))).canCloseWithEscape(true).build())
                 .type(DialogType.confirmation(
                         ActionButton.create(Component.text("Clear project", NamedTextColor.RED), null, 150,
-                                action(player, station, used, (target, view) -> {
+                                action(player, token, station, used, (target, view) -> {
                                     if (!studio.requireProject(target).equals(project)) {
                                         throw new IllegalArgumentException("The project changed. Open the confirmation again");
                                     }
                                     studio.create(target, "Untitled", true);
                                 })),
                         ActionButton.create(Component.text("Keep my song", NamedTextColor.GREEN), null, 150,
-                                action(player, station, used, (target, view) -> {})))));
+                                action(player, token, station, used, (target, view) -> {})))));
         player.closeInventory();
         player.showDialog(dialog);
     }
 
     public void delete(Player player, Location station, UUID id) throws IOException {
         studio.requireIdle(player);
+        StudioIdentity.Token token = studio.token(player);
         Project project = studio.project(player, id);
         AtomicBoolean used = new AtomicBoolean();
         Dialog dialog = Dialog.create(builder -> builder.empty()
@@ -126,9 +130,9 @@ public final class StudioDialogs {
                         .canCloseWithEscape(true).build())
                 .type(DialogType.confirmation(
                         ActionButton.create(Component.text("Delete song", NamedTextColor.RED), null, 150,
-                                action(player, station, used, (target, view) -> studio.deleteProject(target, project), library)),
+                                action(player, token, station, used, (target, view) -> studio.deleteProject(target, project), library)),
                         ActionButton.create(Component.text("Keep song", NamedTextColor.GREEN), null, 150,
-                                action(player, station, used, (target, view) -> {}, library)))));
+                                action(player, token, station, used, (target, view) -> {}, library)))));
         player.closeInventory();
         player.showDialog(dialog);
     }
@@ -143,13 +147,13 @@ public final class StudioDialogs {
                 project.pending(), bpm, metronome));
     }
 
-    private DialogAction action(Player owner, Location station, AtomicBoolean used, Response response) {
-        return action(owner, station, used, response, reopen);
+    private DialogAction action(Player owner, StudioIdentity.Token token, Location station, AtomicBoolean used, Response response) {
+        return action(owner, token, station, used, response, reopen);
     }
 
-    private DialogAction action(Player owner, Location station, AtomicBoolean used, Response response, Reopen destination) {
+    // The token only binds the click to this session; each response checks ownership again before changing anything.
+    private DialogAction action(Player owner, StudioIdentity.Token token, Location station, AtomicBoolean used, Response response, Reopen destination) {
         UUID ownerId = owner.getUniqueId();
-        StudioIdentity.Token token = studio.token(owner);
         return DialogAction.customClick((view, audience) -> {
             if (!(audience instanceof Player target) || !target.getUniqueId().equals(ownerId)
                     || !used.compareAndSet(false, true) || !plugin.isEnabled()) return;

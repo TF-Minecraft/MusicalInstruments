@@ -27,6 +27,13 @@ final class StudioOwnership {
     private final Path root;
     private record Locks(String digest, java.util.Set<UUID> characters, java.util.Set<String> projects) {}
     private final java.util.Map<Path, Locks> lockCache = new java.util.HashMap<>();
+    // A reconciliation snapshot only identifies operations with no effects. Own journal writes are reread,
+    // and an operation checks all current journals before its first backup, write or publication.
+    private boolean pass;
+    private java.util.Map<Path, Object> passLocks;
+    private final java.util.Set<Path> passWrites = new java.util.HashSet<>();
+    private record Readiness(String digest, boolean complete, String toCharacter, boolean otherHeld, String heldSelected, String selected) {}
+    private final java.util.Map<Path, Readiness> readiness = new java.util.HashMap<>();
     StudioOwnership(StudioStore store) { this.store = store; this.root = store.root(); }
 
     void migrate(StudioIdentity identity) throws IOException {
@@ -73,7 +80,7 @@ final class StudioOwnership {
             }
             Path selected = folder.resolve(StudioStore.SELECTED);
             if (Files.exists(selected)) journal.setProperty("selected", Base64.getEncoder().encodeToString(Files.readAllBytes(selected)));
-            write(journalFile, journal); // Entire inventory/backup precedes the first publication.
+            journal(journalFile, journal); // Entire inventory/backup precedes the first publication.
         } else {
             to = owner(journal, "to");
         }
@@ -89,7 +96,7 @@ final class StudioOwnership {
                 } catch (IllegalArgumentException ex) { journal.setProperty("held.selected", "Invalid project selection"); }
             }
             journal.setProperty("complete", "true");
-            write(journalFile, journal);
+            journal(journalFile, journal);
         }
     }
 
@@ -105,11 +112,21 @@ final class StudioOwnership {
             journal.setProperty("held." + key, "Unrecognized legacy account path");
             journal.setProperty("held-source." + key, Base64.getEncoder().encodeToString(bytes));
         }
-        write(file, journal);
+        journal(file, journal);
     }
 
     List<String> transfer(UUID death, String exactDecision, StudioIdentity.Owner from, StudioIdentity.Owner to,
                           BooleanSupplier guard) throws IOException {
+        return transfer(death, exactDecision, from, to, guard, false);
+    }
+
+    List<String> transferDuringPass(UUID death, String exactDecision, StudioIdentity.Owner from, StudioIdentity.Owner to,
+                                    BooleanSupplier guard) throws IOException {
+        return transfer(death, exactDecision, from, to, guard, true);
+    }
+
+    private List<String> transfer(UUID death, String exactDecision, StudioIdentity.Owner from, StudioIdentity.Owner to,
+                                  BooleanSupplier guard, boolean usePass) throws IOException {
         if (from.equals(to)) throw new Conflict("Estate recipient is the testator");
         long revision = validateDecision(exactDecision, death, from, to);
         Path file = root.resolve("ownership/estates").resolve(death + ".xml");
@@ -124,7 +141,7 @@ final class StudioOwnership {
         }
         if (!from.equals(owner(journal, "from")))
             throw new Conflict("Estate journal identity differs from this death");
-        requireUnreserved(file, journal, store.directory(from.character()));
+        Reservation reservation = requireUnreserved(file, journal, store.directory(from.character()), usePass);
         for (String id : ids(journal)) {
             if ("moved".equals(journal.getProperty(id + ".state"))) continue;
             if (!exactDecision.equals(journal.getProperty(id + ".decision"))) {
@@ -148,6 +165,7 @@ final class StudioOwnership {
             if (!id.equals(yaml.get("id")) || !from.account().toString().equals(yaml.get("owner-account"))
                     || !from.character().toString().equals(yaml.get("owner-character")))
                 throw new Conflict("Unresolved project authority: " + id);
+            reservation.beforeEffect();
             plan(journal, id, source, store.projectFile(to.character(), projectId), before, to);
             journal.setProperty(id + ".from-account", from.account().toString());
             journal.setProperty(id + ".from-character", from.character().toString());
@@ -155,20 +173,28 @@ final class StudioOwnership {
             journal.setProperty(id + ".revision", Long.toString(revision));
             changed = true;
         }
-        if (changed) write(file, journal);
+        if (changed) { reservation.beforeEffect(); journal(file, journal); }
         for (String id : ids(journal)) {
-            if (!"moved".equals(journal.getProperty(id + ".state"))) apply(file, journal, id, guard, true);
+            if (!"moved".equals(journal.getProperty(id + ".state"))) { reservation.beforeEffect(); apply(file, journal, id, guard, true); }
         }
         return ids(journal).stream().filter(id -> "moved".equals(journal.getProperty(id + ".state"))).toList();
     }
 
     List<String> retainedReceipts(UUID death, String exactDecision, StudioIdentity.Owner from) throws IOException {
+        return retainedReceipts(death, exactDecision, from, false);
+    }
+
+    List<String> retainedReceiptsDuringPass(UUID death, String exactDecision, StudioIdentity.Owner from) throws IOException {
+        return retainedReceipts(death, exactDecision, from, true);
+    }
+
+    private List<String> retainedReceipts(UUID death, String exactDecision, StudioIdentity.Owner from, boolean usePass) throws IOException {
         Path file = root.resolve("ownership/estates").resolve(death + ".xml");
         Properties journal = read(file);
         boolean changed = false;
         if (!journal.isEmpty() && !from.equals(owner(journal, "from")))
             throw new Conflict("Estate journal identity differs from this death");
-        requireUnreserved(file, journal, store.directory(from.character()));
+        Reservation reservation = requireUnreserved(file, journal, store.directory(from.character()), usePass);
         for (Path source : projects(store.directory(from.character()))) {
             String id = source.getFileName().toString().replace(".yml", "");
             if ("moved".equals(journal.getProperty(id + ".state")))
@@ -182,7 +208,7 @@ final class StudioOwnership {
                 removeEntry(journal, id); changed = true;
             }
         }
-        if (changed) write(file, journal);
+        if (changed) { reservation.beforeEffect(); journal(file, journal); }
         return ids(journal).stream().filter(id -> "moved".equals(journal.getProperty(id + ".state"))).toList();
     }
 
@@ -237,13 +263,13 @@ final class StudioOwnership {
             DurableFiles.write(target, Base64.getDecoder().decode(journal.getProperty(id + ".after")), false);
         }
         journal.setProperty(id + ".state", "published");
-        write(file, journal);
+        journal(file, journal);
         if (removeSource) {
             if (!guard.getAsBoolean()) throw new IOException("Estate decision changed before source removal");
             DurableFiles.delete(source);
         }
         journal.setProperty(id + ".state", "moved");
-        write(file, journal);
+        journal(file, journal);
     }
 
     void requireWritable(UUID character) throws IOException {
@@ -252,16 +278,73 @@ final class StudioOwnership {
     }
 
     // Copies at either end of an unfinished publication still belong to that operation.
-    private void requireUnreserved(Path current, Properties journal, Path folder) throws IOException {
+    private Reservation requireUnreserved(Path current, Properties journal, Path folder, boolean usePass) throws IOException {
         java.util.Set<String> wanted = new java.util.HashSet<>();
         for (String id : ids(journal)) if (!"moved".equals(journal.getProperty(id + ".state"))) wanted.add(id);
         for (Path source : projects(folder)) wanted.add(source.getFileName().toString().replace(".yml", ""));
-        for (String kind : List.of("migration", "estates")) for (Path file : files(root.resolve("ownership").resolve(kind))) {
-            Locks pending = locks(file);
-            if (file.equals(current)) continue;
-            for (String id : pending.projects())
-                if (wanted.contains(id)) throw new Conflict("Project is still pending in another ownership journal: " + id);
+        boolean snapshot = usePass && pass;
+        Reservation reservation = new Reservation(current, wanted, !snapshot);
+        reservation.check(snapshot);
+        return reservation;
+    }
+
+    // A pass may decide that an operation has nothing to do from its snapshot. Before the operation's
+    // first backup, journal write or publication, every journal is read again without the snapshot.
+    private final class Reservation {
+        private final Path current; private final java.util.Set<String> wanted; private boolean exact;
+        Reservation(Path current, java.util.Set<String> wanted, boolean exact) { this.current = current; this.wanted = wanted; this.exact = exact; }
+
+        void beforeEffect() throws IOException {
+            if (exact) return;
+            exact = true;
+            check(false);
         }
+
+        private void check(boolean snapshot) throws IOException {
+            for (Path file : snapshot ? reservations() : listed()) {
+                Locks pending = snapshot ? reserved(file) : locks(file);
+                if (file.equals(current)) continue;
+                for (String id : pending.projects())
+                    if (wanted.contains(id)) throw new Conflict("Project is still pending in another ownership journal: " + id);
+            }
+        }
+    }
+
+    private List<Path> listed() throws IOException {
+        List<Path> listed = new ArrayList<>();
+        for (String kind : List.of("migration", "estates")) listed.addAll(files(root.resolve("ownership").resolve(kind)));
+        return listed;
+    }
+
+    void beginPass() { pass = true; passLocks = null; passWrites.clear(); }
+
+    void endPass() { pass = false; passLocks = null; passWrites.clear(); }
+
+    private java.util.Collection<Path> reservations() throws IOException {
+        List<Path> listed = passLocks != null ? new ArrayList<>(passLocks.keySet()) : listed();
+        if (passLocks == null) {
+            var taken = new java.util.LinkedHashMap<Path, Object>();
+            for (Path file : listed) {
+                try { taken.put(file, locks(file)); }
+                catch (IOException ex) { taken.put(file, ex); }
+            }
+            passLocks = taken;
+        }
+        var all = new java.util.LinkedHashSet<>(listed); all.addAll(passWrites);
+        return all;
+    }
+
+    private Locks reserved(Path file) throws IOException {
+        if (passWrites.contains(file)) return locks(file);
+        Object known = passLocks.get(file);
+        if (known instanceof Locks found) return found;
+        IOException failure = (IOException) known;
+        throw failure instanceof Conflict ? new Conflict(failure.getMessage()) : new IOException(failure.getMessage(), failure);
+    }
+
+    private void journal(Path file, Properties journal) throws IOException {
+        if (pass) passWrites.add(file);
+        write(file, journal);
     }
 
     private Locks locks(Path file) throws IOException {
@@ -290,19 +373,33 @@ final class StudioOwnership {
     void requireEstateReady(StudioIdentity.Owner from) throws IOException {
         Path legacy = root.resolve("projects").resolve(from.account().toString());
         if (projects(legacy).isEmpty()) return;
-        Properties journal = read(root.resolve("ownership/migration").resolve(from.account() + ".xml"));
-        if (journal.isEmpty() || !"true".equals(journal.getProperty("complete")))
+        Readiness journal = readiness(root.resolve("ownership/migration").resolve(from.account() + ".xml"));
+        if (journal == null || !journal.complete())
             throw new IOException("The account's reviewed legacy project migration is not complete");
-        if (from.character().toString().equals(journal.getProperty("to-character")))
-            for (String key : journal.stringPropertyNames()) if (key.startsWith("held.")
-                    && !(key.equals("held.selected") && invalidSelectionOnly(journal, legacy)))
-                throw new Conflict("Legacy projects for this character remain held for staff");
+        if (from.character().toString().equals(journal.toCharacter())
+                && (journal.otherHeld() || journal.heldSelected() != null && !invalidSelectionOnly(journal, legacy)))
+            throw new Conflict("Legacy projects for this character remain held for staff");
     }
 
-    private boolean invalidSelectionOnly(Properties journal, Path legacy) throws IOException {
-        if (!"Invalid project selection".equals(journal.getProperty("held.selected")) || journal.getProperty("selected") == null) return false;
+    // Memoize validated journal fields by exact bytes; the live legacy selection is checked separately.
+    private Readiness readiness(Path file) throws IOException {
+        if (!Files.exists(file)) return null;
+        byte[] bytes = Files.readAllBytes(file);
+        String digest = hash(bytes);
+        Readiness cached = readiness.get(file);
+        if (cached != null && cached.digest().equals(digest)) return cached;
+        Properties journal = read(file, bytes);
+        boolean otherHeld = journal.stringPropertyNames().stream().anyMatch(key -> key.startsWith("held.") && !key.equals("held.selected"));
+        cached = new Readiness(digest, "true".equals(journal.getProperty("complete")), journal.getProperty("to-character"), otherHeld,
+                journal.getProperty("held.selected"), journal.getProperty("selected"));
+        readiness.put(file, cached);
+        return cached;
+    }
+
+    private boolean invalidSelectionOnly(Readiness journal, Path legacy) throws IOException {
+        if (!"Invalid project selection".equals(journal.heldSelected()) || journal.selected() == null) return false;
         byte[] pointer;
-        try { pointer = Base64.getDecoder().decode(journal.getProperty("selected")); }
+        try { pointer = Base64.getDecoder().decode(journal.selected()); }
         catch (IllegalArgumentException malformed) { return false; }
         Path source = legacy.resolve(StudioStore.SELECTED);
         if (!Files.isRegularFile(source) || !java.util.Arrays.equals(pointer, Files.readAllBytes(source))) return false;

@@ -239,4 +239,16 @@ class StudioDialogWorkflowTest {
         }
     }
 
+    @Test void eachDialogChecksOwnershipOnceWhenItOpens() throws Exception {
+        for (int dialog = 0; dialog < 4; dialog++) try (Harness h = new Harness()) {
+            clearInvocations(studio);
+            switch (dialog) {
+                case 0 -> dialogs.create(player, null);
+                case 1 -> dialogs.rename(player, null);
+                case 2 -> dialogs.reset(player, null);
+                default -> dialogs.delete(player, null, project.song().id());
+            }
+            verify(studio, times(1)).token(player);
+        }
+    }
 }

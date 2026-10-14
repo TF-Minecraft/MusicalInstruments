@@ -33,20 +33,27 @@ final class CharacterStudioEstate implements EstateParticipant {
     }
 
     public String id() { return ID; }
-    public Outcome settle(EstateDecision decision) {
+    public Outcome settle(EstateDecision decision) { return settle(decision, false); }
+
+    private Outcome settle(EstateDecision decision, boolean inPass) {
         if (!Estates.guardHolds(decision)) return Outcome.retry("The current estate decision does not hold");
         UUID source = decision.testator().characterId();
         if (!studio.quiescent(source)) return Outcome.retry("The original character's studio saves are still pending");
         try {
             ownership.requireEstateReady(owner(decision.testator()));
             if (decision.property().character().isEmpty()) {
-                var previous = ownership.retainedReceipts(decision.deathId(), decision.toString(), owner(decision.testator()));
+                var previous = inPass
+                        ? ownership.retainedReceiptsDuringPass(decision.deathId(), decision.toString(), owner(decision.testator()))
+                        : ownership.retainedReceipts(decision.deathId(), decision.toString(), owner(decision.testator()));
                 return Outcome.done(Map.of("projects", previous.size()), previous);
             }
             CharacterRef recipient = decision.property().character().orElseThrow();
             if (!studio.quiescent(recipient.characterId())) return Outcome.retry("The recipient's studio saves are still pending");
-            var moved = ownership.transfer(decision.deathId(), decision.toString(), owner(decision.testator()), owner(recipient),
-                    () -> Estates.guardHolds(decision));
+            var moved = inPass
+                    ? ownership.transferDuringPass(decision.deathId(), decision.toString(), owner(decision.testator()), owner(recipient),
+                            () -> Estates.guardHolds(decision))
+                    : ownership.transfer(decision.deathId(), decision.toString(), owner(decision.testator()), owner(recipient),
+                            () -> Estates.guardHolds(decision));
             studio.transferred(source);
             studio.transferred(recipient.characterId());
             return Outcome.done(Map.of("projects", moved.size()), moved);
@@ -67,15 +74,18 @@ final class CharacterStudioEstate implements EstateParticipant {
     }
 
     void reconcile() {
-        for (EstateDecision decision : Estates.decided()) {
-            try {
-                if (!Estates.guardHolds(decision)) continue;
-                Outcome outcome = settle(decision);
-                Map.Entry<Long, Outcome> result = Map.entry(decision.revision(), outcome);
-                if (!result.equals(reported.get(decision.deathId()))
-                        && Estates.report(decision.deathId(), ID, decision.revision(), outcome)) reported.put(decision.deathId(), result);
-            } catch (RuntimeException ex) { plugin.getLogger().warning("Studio estate failed: " + decision.deathId() + " " + ex); }
-        }
+        ownership.beginPass();
+        try {
+            for (EstateDecision decision : Estates.decided()) {
+                try {
+                    if (!Estates.guardHolds(decision)) continue;
+                    Outcome outcome = settle(decision, true);
+                    Map.Entry<Long, Outcome> result = Map.entry(decision.revision(), outcome);
+                    if (!result.equals(reported.get(decision.deathId()))
+                            && Estates.report(decision.deathId(), ID, decision.revision(), outcome)) reported.put(decision.deathId(), result);
+                } catch (RuntimeException ex) { plugin.getLogger().warning("Studio estate failed: " + decision.deathId() + " " + ex); }
+            }
+        } finally { ownership.endPass(); }
     }
 
     private static StudioIdentity.Owner owner(CharacterRef ref) { return new StudioIdentity.Owner(ref.ownerId(), ref.characterId()); }

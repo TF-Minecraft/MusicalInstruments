@@ -52,8 +52,9 @@ public final class StudioMenu implements Listener {
 
     private void open(Player player, Block station, Screen screen, int page) throws IOException {
         studio.station().require(player, station);
+        StudioIdentity.Token token = studio.token(player);
         UUID projectId = screen == Screen.LIBRARY ? null : studio.requireProject(player).song().id();
-        Holder holder = new Holder(studio.token(player), station == null ? null : station.getLocation(), screen, page, projectId);
+        Holder holder = new Holder(token, station == null ? null : station.getLocation(), screen, page, projectId);
         holder.inventory = plugin.getServer().createInventory(holder, screen == Screen.SETTINGS ? 27 : 54,
                 Component.text(screen == Screen.LIBRARY ? "\u266b Your song projects" : screen == Screen.SETTINGS
                         ? "\u266b Song settings" : "\u266b Recording Studio", NamedTextColor.DARK_GRAY));
