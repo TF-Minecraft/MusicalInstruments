@@ -10,7 +10,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.plugin.Plugin;
 import net.tfminecraft.tlibs.character.CharacterSession;
 import net.tfminecraft.tlibs.character.CharacterSessionEndEvent;
-import net.tfminecraft.tlibs.character.CharacterSessionStartEvent;
 import net.tfminecraft.tlibs.character.Characters;
 
 /** Loaded only after the optional TLibs character API has been probed. */
@@ -43,10 +42,6 @@ public final class CharacterStudioBridge implements StudioIdentity {
 
     public static void start(Plugin plugin, StudioService studio, StudioMenu menu) {
         plugin.getServer().getPluginManager().registerEvents(new Listener() {
-            @EventHandler(priority = EventPriority.MONITOR)
-            public void start(CharacterSessionStartEvent event) {
-                studio.completionProjectIds(event.getPlayer());
-            }
             @EventHandler(priority = EventPriority.LOWEST)
             public void end(CharacterSessionEndEvent event) {
                 // The event's session is already noncurrent; finish with its captured owner.
@@ -54,6 +49,5 @@ public final class CharacterStudioBridge implements StudioIdentity {
                 menu.end(event.getPlayer());
             }
         }, plugin);
-        Bukkit.getOnlinePlayers().forEach(studio::completionProjectIds);
     }
 }

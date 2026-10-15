@@ -10,6 +10,9 @@ import java.util.UUID;
 import java.util.logging.Logger;
 import net.tfminecraft.musicalinstruments.InstrumentPlugin;
 import net.tfminecraft.musicalinstruments.managers.InstrumentManager;
+import net.tfminecraft.tlibs.character.CharacterRef;
+import net.tfminecraft.tlibs.character.CharacterSession;
+import net.tfminecraft.tlibs.character.CharacterSessionStartEvent;
 import org.bukkit.Server;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -17,9 +20,74 @@ import org.bukkit.scheduler.BukkitScheduler;
 import org.bukkit.scheduler.BukkitTask;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockbukkit.mockbukkit.MockBukkit;
 
 class StudioCompletionTest {
     @TempDir Path directory;
+
+    @Test void startupAndSessionStartsLeaveProjectsColdUntilExplicitCompletion() throws Exception {
+        var eventServer = MockBukkit.mock();
+        try {
+            var bridgePlugin = MockBukkit.createMockPlugin();
+            var player = eventServer.addPlayer();
+            player.addAttachment(bridgePlugin, "instruments.record", true);
+            var plugin = mock(InstrumentPlugin.class, RETURNS_DEEP_STUBS);
+            when(plugin.getLogger()).thenReturn(Logger.getAnonymousLogger());
+            var scheduler = plugin.getServer().getScheduler();
+            var tasks = new ArrayList<Runnable>();
+            when(scheduler.runTask(eq(plugin), any(Runnable.class))).thenAnswer(call -> {
+                tasks.add(call.getArgument(1)); return mock(BukkitTask.class);
+            });
+            var identity = new TestIdentity(); identity.defaultHeirs = false;
+            var first = new StudioIdentity.Owner(player.getUniqueId(), UUID.randomUUID());
+            var second = new StudioIdentity.Owner(player.getUniqueId(), UUID.randomUUID());
+            identity.sessions.put(player.getUniqueId(), new StudioIdentity.Token(first, 1));
+            var store = spy(new StudioStore(directory));
+            var track = new Track(3, 20, 1, false, List.of(new Note(0, "lute", "sample", 1, 1)));
+            var saved = new Project(new Song(UUID.randomUUID(), second.account(), "Artist", "Saved", List.of(track)), null, 100, false);
+            store.saveOwned(first, new Project(new Song(UUID.randomUUID(), first.account(), "Artist", "Previous", List.of()), null, 100, false));
+            store.saveOwned(second, saved);
+            var studio = new StudioService(plugin, mock(InstrumentManager.class), store,
+                    new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 20, 0, 0), StudioStation.none(), mock(DiscItems.class), identity);
+            try {
+                clearInvocations(store);
+                CharacterStudioBridge.start(bridgePlugin, studio, mock(StudioMenu.class));
+                assertTrue(tasks.isEmpty(), "Startup must not schedule completion loading for online players");
+                verifyNoInteractions(store);
+                eventServer.getPluginManager().callEvent(new CharacterSessionStartEvent(player,
+                        new CharacterSession(new CharacterRef(first.account(), first.character()), 1)));
+                identity.sessions.put(player.getUniqueId(), new StudioIdentity.Token(second, 2));
+                eventServer.getPluginManager().callEvent(new CharacterSessionStartEvent(player,
+                        new CharacterSession(new CharacterRef(second.account(), second.character()), 2)));
+                assertTrue(tasks.isEmpty(), "Login and character switches must not schedule completion loading");
+                verifyNoInteractions(store);
+
+                var commands = new StudioCommand(studio, mock(StudioMenu.class));
+                for (String alias : List.of("music", "recording")) {
+                    assertTrue(commands.onTabComplete(player, null, alias, new String[]{"open", ""}).isEmpty());
+                    for (String action : List.of("volume", "mute", "remove")) {
+                        assertTrue(commands.onTabComplete(player, null, alias, new String[]{action, ""}).isEmpty());
+                    }
+                }
+                assertEquals(1, tasks.size(), "Cold completion requests must share one scheduled load");
+                verifyNoInteractions(store);
+                tasks.removeFirst().run();
+                verify(store).summaries(second.character());
+                verify(store).project(second.character());
+                verify(store, never()).summaries(first.character());
+                verify(store, never()).project(first.character());
+                clearInvocations(store);
+                for (String alias : List.of("music", "recording")) {
+                    assertEquals(List.of(saved.song().id().toString()), commands.onTabComplete(player, null, alias, new String[]{"open", ""}));
+                    for (String action : List.of("volume", "mute", "remove")) {
+                        assertEquals(List.of("3"), commands.onTabComplete(player, null, alias, new String[]{action, ""}));
+                    }
+                }
+                assertTrue(tasks.isEmpty(), "Warm completions must not schedule another load");
+                verifyNoInteractions(store);
+            } finally { studio.close(); }
+        } finally { MockBukkit.unmock(); }
+    }
 
     @Test void completionUsesOwnerSnapshotsAndSavedTracksWithoutKeystrokeIo() throws Exception {
         var plugin = mock(InstrumentPlugin.class);
