@@ -52,6 +52,7 @@ public final class StudioService {
     private final Map<UUID, Project> projects = new HashMap<>();
     private final Map<UUID, List<UUID>> completionIds = new HashMap<>();
     private final Set<UUID> completionLoaded = new HashSet<>();
+    private final Map<UUID, Long> completionRetryAt = new HashMap<>();
     private final Map<UUID, Capture> recordings = new HashMap<>();
     private final Map<UUID, Preview> previews = new HashMap<>();
     private final Map<UUID, Set<String>> privateSounds = new HashMap<>();
@@ -193,6 +194,7 @@ public final class StudioService {
     void transferred(UUID character) {
         projects.remove(character); owners.remove(character);
         completionIds.remove(character); completionLoaded.remove(character);
+        completionRetryAt.remove(character);
     }
 
     public record Activity(int track, int seconds, int notes, int countdown, boolean previewing) {
@@ -304,18 +306,22 @@ public final class StudioService {
     }
 
     // Completion reads memory only. Coalesce a cold owner lookup into one later server task.
+    // Failed loads retry only on explicit requests after the same cooldown used for failed saves.
     private StudioIdentity.Token completionToken(Player player) {
         StudioIdentity.Token token = identity.current(player).orElse(null);
         if (closed || token == null || !current(token, player)) return null;
         UUID owner = token.owner().character();
-        if (completionLoaded.add(owner)) {
+        if (clock >= completionRetryAt.getOrDefault(owner, 0L) && completionLoaded.add(owner)) {
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 if (closed || !current(token, player)) return;
                 try {
                     listProjects(player);
                     project(player);
+                    completionRetryAt.remove(owner);
                 } catch (IOException | IllegalArgumentException ex) {
                     completionIds.remove(owner);
+                    completionLoaded.remove(owner);
+                    completionRetryAt.put(owner, clock + RETRY_TICKS);
                     plugin.getLogger().log(Level.FINE, "Studio completion data unavailable", ex);
                 }
             });
@@ -950,6 +956,7 @@ public final class StudioService {
         if (token == null) return;
         UUID owner = token.owner().character();
         completionIds.remove(owner); completionLoaded.remove(owner);
+        completionRetryAt.remove(owner);
         if (pendingSaves.containsKey(owner)) return; // completeSave evicts the project once it is written.
         if (unsaved.contains(owner)) queueSave(owners.get(owner), projects.get(owner)); // Retry a write that failed.
         else projects.remove(owner); // Its files are current; the next visit reloads it.
@@ -961,6 +968,7 @@ public final class StudioService {
         stopPreview(player);
         UUID character = ending.owner().character();
         completionIds.remove(character); completionLoaded.remove(character);
+        completionRetryAt.remove(character);
         if (!pendingSaves.containsKey(character)) {
             if (unsaved.contains(character)) queueSave(ending.owner(), projects.get(character));
             else projects.remove(character);

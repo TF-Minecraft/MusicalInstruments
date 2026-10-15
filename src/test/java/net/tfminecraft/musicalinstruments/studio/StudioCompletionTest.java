@@ -20,6 +20,8 @@ import org.bukkit.scheduler.BukkitScheduler;
 import org.bukkit.scheduler.BukkitTask;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockbukkit.mockbukkit.MockBukkit;
 
 class StudioCompletionTest {
@@ -200,6 +202,124 @@ class StudioCompletionTest {
             studio.close();
             tasks.removeFirst().run();
             assertTrue(studio.completionProjectIds(player).isEmpty());
+        } finally { studio.close(); }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void failedCompletionLoadsRecoverInTheSameSessionWithoutKeystrokeRetries(boolean selectedProjectFails) throws Exception {
+        var plugin = mock(InstrumentPlugin.class, RETURNS_DEEP_STUBS);
+        when(plugin.getLogger()).thenReturn(Logger.getAnonymousLogger());
+        var scheduler = plugin.getServer().getScheduler();
+        var ticks = new ArrayList<Runnable>();
+        when(scheduler.runTaskTimer(eq(plugin), any(Runnable.class), eq(1L), eq(1L))).thenAnswer(call -> {
+            ticks.add(call.getArgument(1)); return mock(BukkitTask.class);
+        });
+        var tasks = new ArrayList<Runnable>();
+        when(scheduler.runTask(eq(plugin), any(Runnable.class))).thenAnswer(call -> {
+            tasks.add(call.getArgument(1)); return mock(BukkitTask.class);
+        });
+        var player = mock(Player.class);
+        UUID account = UUID.randomUUID();
+        when(player.getUniqueId()).thenReturn(account);
+        when(player.hasPermission("instruments.record")).thenReturn(true);
+        var identity = new TestIdentity(); identity.defaultHeirs = false;
+        var owner = new StudioIdentity.Owner(account, UUID.randomUUID());
+        identity.sessions.put(account, new StudioIdentity.Token(owner, 1));
+        var store = spy(new StudioStore(directory));
+        var track = new Track(3, 20, 1, false, List.of(new Note(0, "lute", "sample", 1, 1)));
+        var saved = new Project(new Song(UUID.randomUUID(), account, "Artist", "Saved", List.of(track)), null, 100, false);
+        store.saveOwned(owner, saved);
+        var failure = new java.io.IOException("Storage temporarily unavailable");
+        if (selectedProjectFails) doThrow(failure).doThrow(failure).doCallRealMethod().when(store).project(owner.character());
+        else doThrow(failure).doThrow(failure).doCallRealMethod().when(store).summaries(owner.character());
+        var studio = new StudioService(plugin, mock(InstrumentManager.class), store,
+                new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 20, 0, 0), StudioStation.none(), mock(DiscItems.class), identity);
+        var commands = new StudioCommand(studio, mock(StudioMenu.class));
+        try {
+            clearInvocations(store);
+            assertTrue(commands.onTabComplete(player, null, "music", new String[]{"open", ""}).isEmpty());
+            assertEquals(1, tasks.size());
+            verifyNoInteractions(store);
+            for (int attempt = 0; attempt < 2; attempt++) {
+                tasks.removeFirst().run();
+                verify(store).summaries(owner.character());
+                if (selectedProjectFails) verify(store).project(owner.character());
+                else verify(store, never()).project(owner.character());
+                clearInvocations(store);
+                for (long elapsed = 0; elapsed < StudioService.RETRY_TICKS; elapsed++) {
+                    for (String alias : List.of("music", "recording")) {
+                        assertTrue(commands.onTabComplete(player, null, alias, new String[]{"open", ""}).isEmpty());
+                        assertTrue(commands.onTabComplete(player, null, alias, new String[]{"volume", ""}).isEmpty());
+                    }
+                    assertTrue(tasks.isEmpty(), "Failed storage must not be retried during the cooldown");
+                    ticks.getFirst().run();
+                }
+                assertTrue(tasks.isEmpty(), "Elapsed time alone must not trigger a disk load");
+                verifyNoInteractions(store);
+                assertTrue(commands.onTabComplete(player, null, "music", new String[]{"open", ""}).isEmpty());
+                assertTrue(commands.onTabComplete(player, null, "recording", new String[]{"remove", ""}).isEmpty());
+                assertEquals(1, tasks.size(), "The next explicit requests must share one retry after the cooldown");
+                verifyNoInteractions(store);
+            }
+            tasks.removeFirst().run();
+            verify(store).summaries(owner.character());
+            verify(store).project(owner.character());
+            clearInvocations(store);
+            for (String alias : List.of("music", "recording")) {
+                assertEquals(List.of(saved.song().id().toString()), commands.onTabComplete(player, null, alias, new String[]{"open", ""}));
+                for (String action : List.of("volume", "mute", "remove")) {
+                    assertEquals(List.of("3"), commands.onTabComplete(player, null, alias, new String[]{action, ""}));
+                }
+            }
+            assertTrue(tasks.isEmpty());
+            verifyNoInteractions(store);
+        } finally { studio.close(); }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"quit", "end", "transferred"})
+    void completionRetryCooldownIsInvalidatedWithTheOwnerSnapshot(String invalidation) throws Exception {
+        var plugin = mock(InstrumentPlugin.class, RETURNS_DEEP_STUBS);
+        when(plugin.getLogger()).thenReturn(Logger.getAnonymousLogger());
+        var scheduler = plugin.getServer().getScheduler();
+        var tasks = new ArrayList<Runnable>();
+        when(scheduler.runTask(eq(plugin), any(Runnable.class))).thenAnswer(call -> {
+            tasks.add(call.getArgument(1)); return mock(BukkitTask.class);
+        });
+        var player = mock(Player.class);
+        UUID account = UUID.randomUUID();
+        when(player.getUniqueId()).thenReturn(account);
+        var identity = new TestIdentity(); identity.defaultHeirs = false;
+        var owner = new StudioIdentity.Owner(account, UUID.randomUUID());
+        var token = new StudioIdentity.Token(owner, 1);
+        identity.sessions.put(account, token);
+        var store = spy(new StudioStore(directory));
+        var saved = new Project(new Song(UUID.randomUUID(), account, "Artist", "Saved", List.of()), null, 100, false);
+        store.saveOwned(owner, saved);
+        doThrow(new IllegalArgumentException("Storage temporarily unavailable")).doCallRealMethod().when(store).summaries(owner.character());
+        var studio = new StudioService(plugin, mock(InstrumentManager.class), store,
+                new StudioSettings(4, 40, 20, 60, 8, 32, 2, 0, 20, 0, 0), StudioStation.none(), mock(DiscItems.class), identity);
+        try {
+            assertTrue(studio.completionProjectIds(player).isEmpty());
+            tasks.removeFirst().run();
+            assertTrue(studio.completionProjectIds(player).isEmpty());
+            assertTrue(tasks.isEmpty());
+            clearInvocations(store);
+            switch (invalidation) {
+                case "quit" -> studio.quit(player);
+                case "end" -> studio.end(player, token);
+                case "transferred" -> studio.transferred(owner.character());
+                default -> fail("Unknown invalidation");
+            }
+            identity.sessions.put(account, new StudioIdentity.Token(owner, 2));
+            assertTrue(studio.completionProjectIds(player).isEmpty());
+            assertTrue(studio.completionTracks(player).isEmpty());
+            assertEquals(1, tasks.size(), "An invalidated snapshot must not retain its previous session's cooldown");
+            verifyNoInteractions(store);
+            tasks.removeFirst().run();
+            assertEquals(List.of(saved.song().id().toString()), studio.completionProjectIds(player));
+            assertTrue(tasks.isEmpty());
         } finally { studio.close(); }
     }
 
