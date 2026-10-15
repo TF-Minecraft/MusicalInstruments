@@ -41,8 +41,13 @@ class StudioBridgeTest {
             Plugin plugin = mock(Plugin.class); var server = mock(org.bukkit.Server.class); var manager = mock(org.bukkit.plugin.PluginManager.class);
             when(plugin.getServer()).thenReturn(server); when(server.getPluginManager()).thenReturn(manager);
             StudioService studio = mock(StudioService.class); StudioMenu menu = mock(StudioMenu.class);
+            bukkit.when(Bukkit::getOnlinePlayers).thenReturn(java.util.List.of(player));
             CharacterStudioBridge.start(plugin, studio, menu);
+            verify(studio).completionProjectIds(player);
             var listener = ArgumentCaptor.forClass(Listener.class); verify(manager).registerEvents(listener.capture(), eq(plugin));
+            listener.getValue().getClass().getMethod("start", net.tfminecraft.tlibs.character.CharacterSessionStartEvent.class)
+                    .invoke(listener.getValue(), new net.tfminecraft.tlibs.character.CharacterSessionStartEvent(player, session));
+            verify(studio, times(2)).completionProjectIds(player);
             characters.when(() -> Characters.isCurrent(session)).thenReturn(false);
             listener.getValue().getClass().getMethod("end", CharacterSessionEndEvent.class).invoke(listener.getValue(),
                     new CharacterSessionEndEvent(player, session, CharacterSessionEndEvent.Reason.SWITCH));

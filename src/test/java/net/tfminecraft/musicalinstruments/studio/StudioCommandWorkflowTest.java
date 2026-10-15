@@ -199,8 +199,10 @@ class StudioCommandWorkflowTest {
         when(player.hasPermission("instruments.studio")).thenReturn(true);
         when(player.hasPermission("instruments.copy")).thenReturn(true);
         assertTrue(commands.onTabComplete(player, cmd, "music", new String[]{""}).containsAll(List.of("copy", "studio")));
-        for (String action : List.of("record", "volume", "mute", "remove"))
-            assertEquals(List.of("1", "2", "3", "4"), commands.onTabComplete(player, cmd, "music", new String[]{action, ""}));
+        assertEquals(List.of("1", "2", "3", "4"), commands.onTabComplete(player, cmd, "music", new String[]{"record", ""}));
+        when(studio.completionTracks(player)).thenReturn(List.of("1", "2"));
+        for (String action : List.of("volume", "mute", "remove"))
+            assertEquals(List.of("1", "2"), commands.onTabComplete(player, cmd, "music", new String[]{action, ""}));
         assertEquals(List.of("take"), commands.onTabComplete(player, cmd, "music", new String[]{"preview", "T"}));
         assertEquals(List.of("on", "off"), commands.onTabComplete(player, cmd, "music", new String[]{"metronome", ""}));
         assertEquals(List.of("confirm"), commands.onTabComplete(player, cmd, "music", new String[]{"reset", ""}));

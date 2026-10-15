@@ -193,6 +193,7 @@ public final class StudioCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (!(sender instanceof Player player) || args.length == 0) return List.of();
         List<String> options = List.of();
         if (args.length == 1) {
             var actions = new java.util.ArrayList<String>();
@@ -206,8 +207,10 @@ public final class StudioCommand implements CommandExecutor, TabCompleter {
             options = actions;
         } else if (args.length == 2 && sender.hasPermission("instruments.record")) {
             options = switch (args[0].toLowerCase(Locale.ROOT)) {
-                case "record", "volume", "mute", "remove" -> java.util.stream.IntStream.rangeClosed(1, studio.settings().tracks())
+                case "record" -> java.util.stream.IntStream.rangeClosed(1, studio.settings().tracks())
                         .mapToObj(Integer::toString).toList();
+                case "open" -> studio.completionProjectIds(player);
+                case "volume", "mute", "remove" -> studio.completionTracks(player);
                 case "preview" -> List.of("take");
                 case "metronome" -> List.of("on", "off");
                 case "reset" -> List.of("confirm");

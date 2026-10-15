@@ -205,11 +205,13 @@ public class InstrumentCommand implements CommandExecutor, TabCompleter {
         if (args.length == 1) {
             List<String> subcommands = new ArrayList<>();
             if (sender.hasPermission("instruments.use")) {
-                subcommands.add("play");
-                subcommands.add("keybinds");
+                if (sender instanceof Player) {
+                    subcommands.add("play");
+                    subcommands.add("keybinds");
+                }
                 subcommands.add("list");
             }
-            if (sender.hasPermission("instruments.give")) {
+            if (sender instanceof Player && sender.hasPermission("instruments.give")) {
                 subcommands.add("give");
             }
             if (sender.hasPermission("instruments.reload")) {
@@ -219,7 +221,9 @@ public class InstrumentCommand implements CommandExecutor, TabCompleter {
             return filterPrefix(subcommands, args[0]);
         }
 
-        if (args.length == 2 && (args[0].equalsIgnoreCase("give") || args[0].equalsIgnoreCase("play"))
+        if (sender instanceof Player && args.length == 2
+                && (args[0].equalsIgnoreCase("give")
+                    || args[0].equalsIgnoreCase("play") && sender.hasPermission("instruments.use"))
                 && sender.hasPermission("instruments.give")) {
             return filterPrefix(new ArrayList<>(manager.getAllInstruments()), args[1]);
         }

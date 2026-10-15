@@ -265,4 +265,16 @@ class InstrumentCommandTest {
         assertEquals(List.of("celtic_harp"), complete(operator, "play", "c"));
         assertEquals(List.of(), complete(player, "play", ""));
     }
+    @Test void consoleAndUseDeniedPlayersOnlySeeUsableInstrumentCommands() {
+        loadInstruments("lute");
+        assertEquals(List.of("list", "reload"), complete(console, ""));
+        assertEquals(List.of(), complete(console, "play", ""));
+        assertEquals(List.of(), complete(console, "give", ""));
+        player.addAttachment(MockBukkit.createMockPlugin(), "instruments.give", true);
+        player.addAttachment(MockBukkit.createMockPlugin(), "instruments.use", false);
+        assertFalse(complete(player, "").contains("play"));
+        assertEquals(List.of(), complete(player, "play", "L"));
+        assertEquals(List.of("lute"), complete(player, "give", "L"));
+    }
+
 }

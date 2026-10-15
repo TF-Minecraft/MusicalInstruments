@@ -50,6 +50,8 @@ public final class StudioService {
     private final StudioStation station;
     private final DiscItems discs;
     private final Map<UUID, Project> projects = new HashMap<>();
+    private final Map<UUID, List<UUID>> completionIds = new HashMap<>();
+    private final Set<UUID> completionLoaded = new HashSet<>();
     private final Map<UUID, Capture> recordings = new HashMap<>();
     private final Map<UUID, Preview> previews = new HashMap<>();
     private final Map<UUID, Set<String>> privateSounds = new HashMap<>();
@@ -188,7 +190,10 @@ public final class StudioService {
                 && recordings.values().stream().noneMatch(capture -> capture.token.owner().character().equals(character));
     }
 
-    void transferred(UUID character) { projects.remove(character); owners.remove(character); }
+    void transferred(UUID character) {
+        projects.remove(character); owners.remove(character);
+        completionIds.remove(character); completionLoaded.remove(character);
+    }
 
     public record Activity(int track, int seconds, int notes, int countdown, boolean previewing) {
         public boolean recording() { return track > 0; }
@@ -274,6 +279,7 @@ public final class StudioService {
             throw new IllegalArgumentException("The project changed. Open the delete confirmation again");
         }
         store.delete(owner, id);
+        completionIds.computeIfPresent(owner, (key, ids) -> ids.stream().filter(candidate -> !candidate.equals(id)).toList());
         Project current = projects.get(owner);
         if (current != null && current.song().id().equals(id)) {
             projects.remove(owner);
@@ -292,7 +298,42 @@ public final class StudioService {
         // An uncached project matches its files; a cached one may be newer than them.
         Project active = projects.get(owner);
         if (active != null) all.put(active.song().id(), ProjectSummary.of(active));
-        return all.values().stream().sorted(ProjectSummary.ORDER).toList();
+        List<ProjectSummary> summaries = all.values().stream().sorted(ProjectSummary.ORDER).toList();
+        completionIds.put(owner, summaries.stream().map(ProjectSummary::id).toList());
+        return summaries;
+    }
+
+    // Completion reads memory only. Coalesce a cold owner lookup into one later server task.
+    private StudioIdentity.Token completionToken(Player player) {
+        StudioIdentity.Token token = identity.current(player).orElse(null);
+        if (closed || token == null || !current(token, player)) return null;
+        UUID owner = token.owner().character();
+        if (completionLoaded.add(owner)) {
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                if (closed || !current(token, player)) return;
+                try {
+                    listProjects(player);
+                    project(player);
+                } catch (IOException | IllegalArgumentException ex) {
+                    completionIds.remove(owner);
+                    plugin.getLogger().log(Level.FINE, "Studio completion data unavailable", ex);
+                }
+            });
+        }
+        return token;
+    }
+
+    List<String> completionProjectIds(Player player) {
+        StudioIdentity.Token token = completionToken(player);
+        return token == null ? List.of() : completionIds.getOrDefault(token.owner().character(), List.of())
+                .stream().map(UUID::toString).toList();
+    }
+
+    List<String> completionTracks(Player player) {
+        StudioIdentity.Token token = completionToken(player);
+        Project project = token == null ? null : projects.get(token.owner().character());
+        return project == null ? List.of() : project.song().tracks().stream()
+                .map(track -> Integer.toString(track.slot())).toList();
     }
 
     public void selectProject(Player player, UUID id) throws IOException {
@@ -318,6 +359,11 @@ public final class StudioService {
         store.saveOwned(token.owner(), project); // Persist successfully before replacing the in-memory version.
         projects.put(token.owner().character(), project);
         unsaved.remove(token.owner().character());
+        completionIds.computeIfPresent(token.owner().character(), (owner, ids) -> {
+            var updated = new java.util.LinkedHashSet<>(ids);
+            updated.add(project.song().id());
+            return List.copyOf(updated);
+        });
     }
 
     /**
@@ -903,6 +949,7 @@ public final class StudioService {
         StudioIdentity.Token token = identity.current(player).orElse(null);
         if (token == null) return;
         UUID owner = token.owner().character();
+        completionIds.remove(owner); completionLoaded.remove(owner);
         if (pendingSaves.containsKey(owner)) return; // completeSave evicts the project once it is written.
         if (unsaved.contains(owner)) queueSave(owners.get(owner), projects.get(owner)); // Retry a write that failed.
         else projects.remove(owner); // Its files are current; the next visit reloads it.
@@ -913,6 +960,7 @@ public final class StudioService {
         if (capture != null && capture.token.equals(ending)) finish(player, capture, "Recording stopped when the character session ended");
         stopPreview(player);
         UUID character = ending.owner().character();
+        completionIds.remove(character); completionLoaded.remove(character);
         if (!pendingSaves.containsKey(character)) {
             if (unsaved.contains(character)) queueSave(ending.owner(), projects.get(character));
             else projects.remove(character);
