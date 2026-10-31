@@ -300,10 +300,10 @@ class StudioListenerTest {
         verify(studio, times(2)).unload(world.getUID(), 2, 3);
         var source = mock(org.bukkit.inventory.Inventory.class);
         var destination = mock(org.bukkit.inventory.Inventory.class);
-        when(destination.getHolder()).thenReturn(box);
+        when(destination.getHolder(false)).thenReturn(box);
         var blocked = new org.bukkit.event.inventory.InventoryMoveItemEvent(source, disc, destination, true);
         listener.hopper(blocked); assertTrue(blocked.isCancelled());
-        when(destination.getHolder()).thenReturn(null);
+        when(destination.getHolder(false)).thenReturn(null);
         var ordinary = new org.bukkit.event.inventory.InventoryMoveItemEvent(source, disc, destination, true);
         listener.hopper(ordinary); assertFalse(ordinary.isCancelled());
         when(discs.custom(disc)).thenReturn(false);

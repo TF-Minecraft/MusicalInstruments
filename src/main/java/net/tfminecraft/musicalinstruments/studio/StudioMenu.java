@@ -185,7 +185,7 @@ public final class StudioMenu implements Listener {
 
     @EventHandler
     public void click(InventoryClickEvent event) {
-        if (!(event.getView().getTopInventory().getHolder() instanceof Holder holder)) return;
+        if (!(event.getView().getTopInventory().getHolder(false) instanceof Holder holder)) return;
         // Normal inventory clicks let the player pick up and put down the physical disc.
         if (event.getRawSlot() >= holder.inventory.getSize()
                 && (event.getClick() == ClickType.LEFT || event.getClick() == ClickType.RIGHT)) return;
@@ -312,7 +312,7 @@ public final class StudioMenu implements Listener {
 
     @EventHandler
     public void drag(InventoryDragEvent event) {
-        if (!(event.getView().getTopInventory().getHolder() instanceof Holder holder)) return;
+        if (!(event.getView().getTopInventory().getHolder(false) instanceof Holder holder)) return;
         if (event.getRawSlots().stream().noneMatch(slot -> slot < holder.inventory.getSize())) return;
         event.setCancelled(true);
         if (holder.screen == Screen.EDITOR && event.getRawSlots().equals(java.util.Set.of(50))
@@ -334,7 +334,7 @@ public final class StudioMenu implements Listener {
 
     // The holder of the player's open container; MockBukkit reports no top inventory when none is open.
     private static InventoryHolder open(Player player) {
-        return player.getOpenInventory().getTopInventory() instanceof Inventory top ? top.getHolder() : null;
+        return player.getOpenInventory().getTopInventory() instanceof Inventory top ? top.getHolder(false) : null;
     }
 
     private static final class Holder implements InventoryHolder {

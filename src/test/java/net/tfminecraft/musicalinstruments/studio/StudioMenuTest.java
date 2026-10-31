@@ -88,6 +88,7 @@ class StudioMenuTest {
         when(scheduler.runTaskTimer(eq(plugin), any(Runnable.class), eq(10L), eq(10L))).thenReturn(refreshTask);
         when(server.createInventory(any(InventoryHolder.class), anyInt(), any(Component.class))).thenAnswer(call -> {
             when(inventory.getHolder()).thenReturn(call.getArgument(0));
+            when(inventory.getHolder(false)).thenReturn(call.getArgument(0));
             when(inventory.getSize()).thenReturn(call.getArgument(1));
             return inventory;
         });

@@ -129,7 +129,7 @@ public final class StudioListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void hopper(InventoryMoveItemEvent event) {
         // Custom editions require our insertion lifecycle; vanilla discs retain hopper behavior.
-        if (studio.discs().custom(event.getItem()) && event.getDestination().getHolder() instanceof Jukebox) {
+        if (studio.discs().custom(event.getItem()) && event.getDestination().getHolder(false) instanceof Jukebox) {
             event.setCancelled(true);
         }
     }
